@@ -1,0 +1,11 @@
+* text=auto
+*.sh text eol=LF
+*.md text
+*.py text diff=python
+*.json text
+models/*.pt filter=lfs diff=lfs merge=lfs -text
+models/*.jit filter=lfs diff=lfs merge=lfs -text
+models/*.onnx filter=lfs diff=lfs merge=lfs -text
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.png filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text

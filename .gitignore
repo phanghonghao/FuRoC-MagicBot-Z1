@@ -1,0 +1,41 @@
+# Isaac Lab (third-party framework, too large)
+IsaacLab/
+
+# Training output
+logs/
+runs/
+wandb/
+output/
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp files
+tmp/
+*.tmp
+*.bak
+*.log
+
+# PDF
+*.pdf
+
+# Claude
+.claude/
+
+# Extracted text
+remote_server_manual_extracted.txt
+
+# Training checkpoints (only models/ tracked via LFS)
+**/model_*.pt

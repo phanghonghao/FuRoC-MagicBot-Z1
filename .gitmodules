@@ -1,0 +1,10 @@
+[submodule "magiclab_rl_lab"]
+	path = magiclab_rl_lab
+	url = https://github.com/phanghonghao/magiclab_rl_lab.git
+	branch = z1-custom
+[submodule "magicbot-z1_description"]
+	path = magicbot-z1_description
+	url = https://github.com/MagiclabRobotics/magicbot-z1_description.git
+[submodule "magicbot-z1_sdk"]
+	path = magicbot-z1_sdk
+	url = https://github.com/MagiclabRobotics/magicbot-z1_sdk.git
