@@ -2,7 +2,7 @@
 
 > 从最基础到最困难的分阶段训练策略、参数配置与预期训练量。
 >
-> 硬件：RTX 6000D (85GB)，4096 envs，单次训练约 28-35 小时 / 50K 迭代。
+> 硬件：RTX 6000D (85GB)，16384 envs，单次训练约 28-35 小时 / 50K 迭代。
 
 ---
 
@@ -225,7 +225,7 @@ Stage 1: 站立 ──→ Stage 2: 平地行走 ──→ Stage 3: 轻度地形 
 |------|------|
 | 每次只改 1 个参数 | 同时改多个会导致崩溃（s2_stable 教训） |
 | 不要改网络结构 | [512,256,128] 已验证有效 |
-| 不要增大 num_envs | 4096 已用 ~15GB，16000 会 OOM |
+| 不要盲目增大 num_envs | 16384 已用 ~15GB，需关注 VRAM |
 | entropy_coef 谨慎调 | 过高→不收敛，过低→过早收敛 |
 | learning_rate 保持 1e-3 | 配合 adaptive schedule 自动调节 |
 
@@ -401,31 +401,48 @@ sub_terrains = {
 
 ## 9. 历史训练记录
 
-> 此节记录已完成和正在进行的训练 run，用于追踪进度。
+> 更新时间：2026-05-06。通过 `/gpu-train` 获取最新状态。
 
-### 已完成 Run
-
-| # | Run | 迭代 | 最佳模型 | 最佳 Reward | 结果 |
-|---|-----|------|---------|------------|------|
-| 1 | s1_flat | 36,429 | m3861 | 47.33 | 平地行走，过拟合 |
-| 2 | s2_flat_retry | 31,173 | m3861 | 47.33 | 平地稳定行走 |
-| 3 | s4_gentle_terrain | 49,999 | **m47862** | 47.06 | 轻度地形，HEALTHY 完成 |
-| 4 | s5_rough_terrain | 41,590 | m32790 | 38.04 | 粗糙地形，过拟合 (action_rate 崩塌) |
-| 5 | s6_l1_action_rate | 1,799 | m1778 | 5.86 | L1 action_rate 测试，单卡，过拟合 |
-| 6 | s6_l1_action_rate_4gpu | 7,735 | m5032 | 31.2 | L1 + 4卡分布式，过拟合 (reward↓36%) |
-
-### 进行中 Run
-
-| # | Run | 迭代 | 状态 |
-|---|-----|------|------|
-| 7 | s4_full_terrain | ~5,400 | 4卡 orchestrator 自动管理，HEALTHY |
-
-### 版本演进
+### 9.1 训练链
 
 ```
-s1_flat ──→ s2_flat_retry
-  └──→ s4_terrain (失败) ──→ s4_gentle_terrain (✓, best=m47862)
-                               └──→ s5_rough_terrain ──→ s6_l1_action_rate (1卡, 过拟合)
-                                                            └──→ s6_l1_action_rate_4gpu (4卡, 过拟合)
-                                                                         └──→ s4_full_terrain (自动编排, 训练中)
+s1_flat (m3861, 47.33, flat)
+  └──→ s2_gentle (m47862, 47.06, gentle) ← 历史最佳
+         └──→ s3_rough_l2 (m32790, 38.04, rough) ← 粗地形最佳
+                └──→ s4_full_terrain (m5155→m15000, 37.73, full terrain) ← 已停止
 ```
+
+### 9.2 各 Run 详情
+
+| # | Run | 迭代 | 最佳模型 | Best Reward | 状态 | 教训 |
+|---|-----|------|---------|-------------|------|------|
+| 1 | s1_flat | 36,429 | m3861 | 47.33 | OVERFITTING | 后续阶段 resume 起点；原始 checkpoint 已清理，仅保留 JIT |
+| 2 | s2_gentle | 49,999 | **m47862** | **47.06** | HEALTHY | 历史最佳；L2 action_rate 尾部崩塌（model_49999 raw actions ~109） |
+| 3 | s3_rough_l2 | 41,590 | m32790 | 38.04 | OVERFITTING | action_rate 崩塌到 -167；原始 checkpoint 已清理，仅保留 JIT |
+| 4 | s4_full_terrain | 15,000 | m5155 | 37.73 | 已停止 | 4-GPU orchestrator，全类型地形 |
+
+### 9.3 仿真视频记录
+
+| Run | 模型 | Isaac Sim 视频 | MuJoCo 视频 |
+|-----|------|---------------|-------------|
+| s1_flat | m3861 (JIT) | s1_flat_model3861_isaaclab.mp4 | s1_flat_m3861_sim2sim_mujoco.mp4 |
+| s2_gentle | m47900 | s2_gentle_model47900_isaaclab.mp4 | s2_gentle_m47900_sim2sim_mujoco.mp4 |
+| s3_rough_l2 | m32800 (JIT) | s3_rough_l2_model32800_isaaclab.mp4 | s3_rough_l2_m32790_sim2sim_mujoco.mp4 |
+
+视频本地路径：`Magicbot_Z1/videos/<run_name>/`
+
+### 9.4 已知问题
+
+- **action_rate L2 崩塌**：s2_gentle 和 s3_rough_l2 尾部出现。使用 L1 替代 L2 可规避
+- **超参批量修改**：s2_stable 同时改 6 个超参 → 100 iter 内崩溃。每次只改 1 个
+- **地形难度过早引入**：s4_terrain 在机器人未学会走路时引入高难度 → 全失败
+- **Checkpoint 不等于最后模型**：model_49999 发散，需在 reward 峰值附近选择
+
+### 9.5 磁盘清理记录 (2026-05-04)
+
+训练日志：14GB → 5.5GB。s1_flat、s1_flat_retry、s1_stable、s3_rough_l2、s1_highspeed、s3_rough_fail 的中间 checkpoint 已删除（保留 JIT policy）。s2_gentle 和 s3_rough_l1_4gpu 全部保留。
+
+### 9.6 TODO
+
+- [ ] **s4_full_terrain 评估** → 决定下一步
+- [ ] **多机器人可视化**：Play/录制视频时同时显示多个机器人（num_envs>1 俯瞰模式）

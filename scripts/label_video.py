@@ -156,8 +156,13 @@ def label_video(
 
     print()
 
-    # Write output
-    fps = 30  # Isaac Lab default recording fps
+    # Write output — preserve input fps for correct playback speed
+    import imageio.v2 as iio2
+    try:
+        meta = iio2.immeta(input_path, plugin="pyav")
+        fps = int(meta.get("fps", 50))
+    except Exception:
+        fps = 50  # fallback: match control frequency (50Hz)
     iio.imwrite(output_path, labeled, plugin="pyav", fps=fps, codec="libx264")
     print(f"[label_video] Done: {output_path}")
 

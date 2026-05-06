@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PPO 互动学习 — MagicBot Z1</title>
+<style>
+:root {
+  --bg: #0d1117; --card: #161b22; --border: #30363d;
+  --text: #e6edf3; --dim: #8b949e; --accent: #58a6ff;
+  --green: #3fb950; --red: #f85149; --orange: #d29922;
+  --purple: #bc8cff;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior: smooth; }
+body { font-family: -apple-system, "Segoe UI", "Noto Sans SC", sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+
+/* ── Nav ── */
+nav { position: fixed; left:0; top:0; width:220px; height:100vh; background: var(--card); border-right:1px solid var(--border); padding:24px 16px; overflow-y:auto; z-index:100; }
+nav h2 { font-size:14px; color:var(--accent); margin-bottom:16px; letter-spacing:1px; }
+nav a { display:block; padding:6px 12px; color:var(--dim); text-decoration:none; font-size:13px; border-radius:6px; margin-bottom:2px; transition: all .2s; }
+nav a:hover, nav a.active { color:var(--text); background:rgba(88,166,255,.1); }
+
+/* ── Main ── */
+main { margin-left:240px; max-width:860px; padding:40px 32px 120px; }
+h1 { font-size:28px; margin-bottom:8px; }
+h1 span { color:var(--accent); }
+.subtitle { color:var(--dim); font-size:15px; margin-bottom:48px; }
+
+.chapter { margin-bottom:64px; }
+.chapter h2 { font-size:22px; margin-bottom:16px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+.chapter h2 .ch-num { color:var(--accent); font-family: monospace; }
+.chapter h3 { font-size:17px; margin: 24px 0 12px; color:var(--orange); }
+.chapter p { margin-bottom:12px; color:var(--dim); font-size:15px; }
+.chapter strong { color:var(--text); }
+.chapter code { background:rgba(88,166,255,.1); padding:2px 6px; border-radius:4px; font-size:13px; color:var(--accent); }
+.chapter .formula { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:16px 20px; margin:16px 0; font-family:'Times New Roman',serif; font-size:17px; text-align:center; color:var(--text); }
+.chapter .formula .sym { color:var(--accent); font-style:italic; }
+.chapter .formula .op { color:var(--orange); }
+.chapter .note { background:rgba(63,185,80,.08); border-left:3px solid var(--green); padding:12px 16px; border-radius:0 8px 8px 0; margin:16px 0; font-size:14px; color:var(--dim); }
+.chapter .note strong { color:var(--green); }
+.chapter .warn { background:rgba(248,81,73,.08); border-left:3px solid var(--red); padding:12px 16px; border-radius:0 8px 8px 0; margin:16px 0; font-size:14px; color:var(--dim); }
+
+/* ── Canvas Container ── */
+.viz-box { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; margin:20px 0; }
+.viz-box canvas { width:100%; border-radius:8px; display:block; background:#0a0e14; }
+.viz-box .controls { display:flex; gap:16px; flex-wrap:wrap; margin-top:14px; align-items:center; }
+.viz-box .controls label { font-size:13px; color:var(--dim); display:flex; align-items:center; gap:8px; }
+.viz-box .controls input[type=range] { width:140px; accent-color:var(--accent); }
+.viz-box .controls .val { font-family:monospace; color:var(--accent); min-width:36px; }
+.viz-box .controls button { background:var(--accent); color:#000; border:none; padding:6px 16px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; transition:opacity .2s; }
+.viz-box .controls button:hover { opacity:.85; }
+.viz-caption { font-size:12px; color:var(--dim); margin-top:10px; text-align:center; }
+
+/* ── Z1 Param Table ── */
+.param-grid { display:grid; grid-template-columns: 1fr 1fr 2fr; gap:1px; background:var(--border); border-radius:8px; overflow:hidden; margin:16px 0; }
+.param-grid > div { background:var(--card); padding:10px 14px; font-size:14px; }
+.param-grid .hd { color:var(--accent); font-weight:600; font-size:13px; }
+.param-grid .val { font-family:monospace; color:var(--green); }
+
+/* ── Responsive ── */
+@media(max-width:900px) {
+  nav { display:none; }
+  main { margin-left:0; padding:24px 16px; }
+}
+
+/* ── Flow Chart ── */
+.flow { display:flex; flex-direction:column; align-items:center; gap:0; margin:20px 0; }
+.flow-step { background:var(--card); border:2px solid var(--border); border-radius:10px; padding:14px 24px; text-align:center; min-width:280px; transition: all .4s; }
+.flow-step.active { border-color:var(--accent); box-shadow:0 0 20px rgba(88,166,255,.25); }
+.flow-step .step-title { font-weight:600; font-size:15px; margin-bottom:4px; }
+.flow-step .step-detail { font-size:12px; color:var(--dim); }
+.flow-arrow { font-size:20px; color:var(--dim); line-height:1; }
+.flow-arrow.active { color:var(--accent); }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+
+.legend { display:flex; gap:20px; justify-content:center; margin-top:8px; flex-wrap:wrap; }
+.legend span { font-size:12px; color:var(--dim); display:flex; align-items:center; gap:6px; }
+.legend .dot { width:24px; height:3px; border-radius:2px; display:inline-block; }
+</style>
+</head>
+<body>
+
+<nav>
+  <h2>PPO 学习</h2>
+  <a href="#ch0">你已知道什么</a>
+  <a href="#ch1">策略梯度直觉</a>
+  <a href="#ch2">PPO Clip 核心</a>
+  <a href="#ch3">GAE 优势估计</a>
+  <a href="#ch4">完整训练流程</a>
+  <a href="#ch5">Z1 参数对照</a>
+</nav>
+
+<main>
+<h1>PPO <span>互动学习手册</span></h1>
+<p class="subtitle">Proximal Policy Optimization — 结合 MagicBot Z1 训练参数，从直觉到公式，逐步理解。</p>
+
+<!-- ════════════════════════════════════════ -->
+<!-- Chapter 0: What You Already Know       -->
+<!-- ════════════════════════════════════════ -->
+<section class="chapter" id="ch0">
+<h2><span class="ch-num">0</span> 你已经知道什么</h2>
+<p>在 Z1 的训练里，你已经每天都在用 PPO 了——只是没有拆开看过它的内部结构。</p>
+
+<h3>你的训练命令</h3>
+<div class="formula">
+python train.py --task Magiclab-Z1-12dof-Velocity --num_envs 16384 --headless
+</div>
+
+<p>运行这条命令后，背后发生的事情是：</p>
+
+<div class="flow">
+  <div class="flow-step"><div class="step-title">16,384 个 Z1 机器人同时在仿真中走路</div><div class="step-detail">每个 20s / 1000 步 / 50Hz 控制</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="step-title">收集每一步的观测、动作、奖励</div><div class="step-detail">235-dim 观测 × 12-dim 动作 × 标量奖励</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="step-title">PPO 算法更新策略网络</div><div class="step-detail">Actor(235→512→256→128→12) 参数微调</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="step-title">新策略控制机器人，开始下一轮</div><div class="step-detail">期望走得更好、更稳、更省力</div></div>
+</div>
+
+<p>这份教程的目标就是让你彻底理解<strong>第 3 步</strong>——PPO 算法到底在做什么。</p>
+</section>
+
+<!-- ════════════════════════════════════════ -->
+<!-- Chapter 1: Policy Gradient Intuition   -->
+<!-- ════════════════════════════════════════ -->
+<section class="chapter" id="ch1">
+<h2><span class="ch-num">1</span> 策略梯度直觉</h2>
+
+<h3>策略 &pi; 是什么？</h3>
+<p>策略是一个函数：<strong>给定观测 → 输出动作的概率分布</strong>。对 Z1 来说，输入 235 维观测，输出 12 个关节各自的高斯分布（均值 + 标准差）。</p>
+
+<p>为了直观理解，下面把动作简化为 <strong>1 维</strong>（比如"左膝弯曲程度"），策略就是一个高斯分布曲线。点击按钮采样，看分布如何更新。</p>
+
+<div class="viz-box">
+  <canvas id="cvPG" width="780" height="320"></canvas>
+  <div class="controls">
+    <button onclick="pgSample()">采样一个动作</button>
+    <button onclick="pgReset()">重置</button>
+    <label>学习率 <input type="range" id="pgLR" min="1" max="20" value="8"><span class="val" id="pgLRv">0.08</span></label>
+  </div>
+  <div class="viz-caption">绿色区域 = 高奖励。采样后，策略（蓝色曲线）会朝奖励更高的方向移动。这就是策略梯度的核心思想。</div>
+</div>
+
+<h3>直觉总结</h3>
+<div class="note"><strong>策略梯度一句话：</strong>采样动作 → 看奖励 → 增大好动作的概率，减小坏动作的概率。</div>
+<p>问题是：如果学习率太大，一步更新太猛，策略可能崩溃。这就是 PPO 要解决的核心问题。</p>
+</section>
+
+<!-- ════════════════════════════════════════ -->
+<!-- Chapter 2: PPO Clipping                -->
+<!-- ════════════════════════════════════════ -->
+<section class="chapter" id="ch2">
+<h2><span class="ch-num">2</span> PPO Clip — 核心创新</h2>
+
+<h3>问题：更新太大会崩溃</h3>
+<p>如果策略一步变太多（比如突然把所有概率都翻转了），机器人行为会突变，之前学到的全部白费。这叫<strong>策略崩溃</strong>。</p>
+
+<h3>解法：限制变化幅度</h3>
+<p>PPO 引入了一个<strong>概率比</strong>：</p>
+<div class="formula">
+<span class="sym">r</span>(<span class="sym">&theta;</span>) = <span class="sym">&pi;</span><sub>新</sub>(<span class="sym">a</span>|<span class="sym">s</span>) / <span class="sym">&pi;</span><sub>旧</sub>(<span class="sym">a</span>|<span class="sym">s</span>)
+</div>
+<p><code>r = 1.0</code> 表示新旧策略一样。<code>r = 2.0</code> 表示新策略认为这个动作的概率是旧的 2 倍。</p>
+
+<p>PPO 的目标函数：</p>
+<div class="formula">
+L<sup>CLIP</sup> = E[ min( <span class="sym">r</span>&middot;<span class="sym">A</span> , clip(<span class="sym">r</span>, 1<span class="op">&minus;</span><span class="sym">&epsilon;</span>, 1<span class="op">+</span><span class="sym">&epsilon;</span>)&middot;<span class="sym">A</span> ) ]
+</div>
+<p>其中 <code>A</code> 是优势函数（这个动作比平均水平好多少），<code>&epsilon;</code> 是 clip 范围（Z1 用 0.2）。</p>
+
+<h3>互动：拖动滑块理解 Clip</h3>
+<p>下面的图展示了 <strong>对于单个 (r, A) 组合</strong>，目标函数的形状。调整参数观察：</p>
+
+<div class="viz-box">
+  <canvas id="cvClip" width="780" height="400"></canvas>
+  <div class="legend">
+    <span><span class="dot" style="background:var(--accent)"></span>r&middot;A 无裁剪</span>
+    <span><span class="dot" style="background:var(--red); opacity:.6"></span>clip(r)&middot;A 裁剪后</span>
+    <span><span class="dot" style="background:var(--green); height:4px"></span>PPO 实际目标 min(&middot;,&middot;)</span>
+    <span style="background:rgba(88,166,255,.15); padding:2px 8px; border-radius:4px; color:var(--accent)">裁剪激活区</span>
+  </div>
+  <div class="controls">
+    <label>&epsilon; (clip 范围) <input type="range" id="clipEps" min="5" max="50" value="20"><span class="val" id="clipEpsV">0.20</span></label>
+    <label>A (优势) <input type="range" id="clipA" min="-30" max="30" value="15"><span class="val" id="clipAV">1.5</span></label>
+  </div>
+  <div class="viz-caption" id="clipExplain">A &gt; 0（好动作）：clip 防止 r 变得太大，即防止"好动作概率暴增"。 | 灰色虚线标记 r=1（新旧策略相同）。</div>
+</div>
+
+<div class="note"><strong>关键理解：</strong>当 r 在 [1-&epsilon;, 1+&epsilon;] 范围内时，PPO 和普通策略梯度一样。一旦超出，目标函数被"削平"，梯度为零，<strong>策略不会再往那个方向更新</strong>。这就是"近端 (Proximal)"的含义——新策略不能离旧策略太远。</div>
+</section>
+
+<!-- ════════════════════════════════════════ -->
+<!-- Chapter 3: GAE                          -->
+<!-- ════════════════════════════════════════ -->
+<section class="chapter" id="ch3">
+<h2><span class="ch-num">3</span> GAE — 优势估计</h2>
+
+<h3>什么是"优势"？</h3>
+<p>优势 <code>A(s,a)</code> 回答这个问题：<strong>"这个动作比平均水平好多少？"</strong></p>
+<ul style="color:var(--dim); margin:0 0 12px 24px; font-size:15px;">
+  <li>A &gt; 0 → 比平均好，PPO 会<strong>增大</strong>它的概率</li>
+  <li>A &lt; 0 → 比平均差，PPO 会<strong>减小</strong>它的概率</li>
+  <li>A = 0 → 平平无奇，不更新</li>
+</ul>
+
+<h3>怎么算优势？两难选择</h3>
+<p>最直觉的两种极端：</p>
+<p>&bull; <strong>TD(0)</strong>：只用"当前奖励 + 下一状态的价值估计"。方差低，但偏差大（依赖价值函数准不准）。</p>
+<p>&bull; <strong>Monte Carlo</strong>：等整个 episode 跑完，累加所有未来奖励。偏差低，但方差大（一条轨迹可能很 noisy）。</p>
+
+<p><strong>GAE (Generalized Advantage Estimation)</strong> 用参数 <code>&lambda;</code> 在两者之间插值：</p>
+<div class="formula">
+&Acirc;<sub>t</sub> = &delta;<sub>t</sub> + (<span class="sym">&gamma;&lambda;</span>)&delta;<sub>t+1</sub> + (<span class="sym">&gamma;&lambda;</span>)<sup>2</sup>&delta;<sub>t+2</sub> + ...
+<br><span style="font-size:13px;color:var(--dim)">其中 &delta;<sub>t</sub> = r<sub>t</sub> + &gamma;V(s<sub>t+1</sub>) &minus; V(s<sub>t</sub>) 是 TD 残差</span>
+</div>
+
+<h3>互动：调节 &lambda; 看效果</h3>
+<p>下面模拟了一条 10 步轨迹的奖励。拖动 &lambda; 滑块，观察每步的优势估计如何变化。</p>
+
+<div class="viz-box">
+  <canvas id="cvGAE" width="780" height="340"></canvas>
+  <div class="controls">
+    <label>&lambda; (GAE) <input type="range" id="gaeLam" min="0" max="100" value="95"><span class="val" id="gaeLamV">0.95</span></label>
+    <label>&gamma; (折扣) <input type="range" id="gaeGam" min="80" max="100" value="99"><span class="val" id="gaeGamV">0.99</span></label>
+  </div>
+  <div class="viz-caption">上：轨迹奖励 (蓝色柱) 和价值函数估计 (灰色虚线)。下：各步的优势估计。&lambda; 越大，优势"传播"越远（低偏差高方差）；&lambda; 越小，只看近处（高偏差低方差）。</div>
+</div>
+
+<div class="note"><strong>Z1 的配置：</strong>&gamma;=0.99, &lambda;=0.95。这是 RL locomotion 的经典组合——接近 MC 但略有平滑，适合连续控制任务。</div>
+</section>
+
+<!-- ════════════════════════════════════════ -->
+<!-- Chapter 4: Full PPO Loop                -->
+<!-- ════════════════════════════════════════ -->
+<section class="chapter" id="ch4">
+<h2><span class="ch-num">4</span> 完整 PPO 训练循环</h2>
+
+<p>把前三节串起来，就是一次完整的 PPO 更新。点击"下一步"逐步看。</p>
+
+<div class="viz-box">
+  <div class="flow" id="ppoFlow">
+    <div class="flow-step" id="fs0"><div class="step-title">1. 环境交互 &mdash; 采集数据</div><div class="step-detail">16384 个环境各跑 24 步 → 共 393,216 条 (s, a, r, s') 转移</div></div>
+    <div class="flow-arrow" id="fa0">&darr;</div>
+    <div class="flow-step" id="fs1"><div class="step-title">2. 计算回报 & 优势</div><div class="step-detail">GAE(&lambda;=0.95) 计算每步优势 &Acirc;<sub>t</sub>，折扣回报 R<sub>t</sub></div></div>
+    <div class="flow-arrow" id="fa1">&darr;</div>
+    <div class="flow-step" id="fs2"><div class="step-title">3. 计算旧策略概率</div><div class="step-detail">记录 log &pi;<sub>old</sub>(a|s)，后续 ratio r = &pi;<sub>new</sub>/&pi;<sub>old</sub></div></div>
+    <div class="flow-arrow" id="fa2">&darr;</div>
+    <div class="flow-step" id="fs3"><div class="step-title">4. PPO 更新 (5 epochs &times; 4 mini-batches)</div><div class="step-detail">每个 mini-batch 24,576 条数据，计算 clip loss + value loss + entropy</div></div>
+    <div class="flow-arrow" id="fa3">&darr;</div>
+    <div class="flow-step" id="fs4"><div class="step-title">5. 梯度下降，更新 Actor + Critic</div><div class="step-detail">lr=1e-3, max_grad_norm=1.0 → 策略微微变好</div></div>
+    <div class="flow-arrow" id="fa4">&darr;</div>
+    <div class="flow-step" id="fs5"><div class="step-title">6. 回到第 1 步，用新策略采集数据</div><div class="step-detail">重复 50,000 次迭代</div></div>
+  </div>
+  <div class="controls" style="justify-content:center">
+    <button onclick="ppoStep()">下一步 &rarr;</button>
+    <button onclick="ppoReset()">重置</button>
+    <button onclick="ppoAutoPlay()">&#9654; 自动播放</button>
+  </div>
+  <div id="ppoExplain" class="viz-caption">点击"下一步"开始。</div>
+</div>
+
+<h3>一次迭代的数据量</h3>
+<div class="param-grid">
+  <div class="hd">参数</div><div class="hd">值</div><div class="hd">含义</div>
+  <div>num_envs</div><div class="val">16384</div><div>同时并行的仿真环境数</div>
+  <div>num_steps_per_env</div><div class="val">24</div><div>每次采集每个环境跑 24 步</div>
+  <div>batch_size</div><div class="val">393,216</div><div>16384 &times; 24 = 总转移数</div>
+  <div>num_mini_batches</div><div class="val">4</div><div>分成 4 个 mini-batch</div>
+  <div>mini_batch_size</div><div class="val">98,304</div><div>每次梯度更新的数据量</div>
+  <div>num_learning_epochs</div><div class="val">5</div><div>同一批数据用 5 遍（off-policy reuse）</div>
+  <div>clip_param (&epsilon;)</div><div class="val">0.2</div><div>概率比裁剪范围 [0.8, 1.2]</div>
+</div>
+</section>
+
+<!-- ════════════════════════════════════════ -->
+<!-- Chapter 5: Z1 Parameter Mapping         -->
+<!-- ════════════════════════════════════════ -->
+<section class="chapter" id="ch5">
+<h2><span class="ch-num">5</span> Z1 参数 &harr; PPO 概念对照</h2>
+
+<h3>网络结构</h3>
+<div class="param-grid">
+  <div class="hd">组件</div><div class="hd">结构</div><div class="hd">说明</div>
+  <div>Actor (策略网络)</div><div class="val">235&to;512&to;256&to;128&to;12</div><div>输入 235-dim 观测 → 输出 12 个关节的均值</div>
+  <div>Critic (价值网络)</div><div class="val">237&to;512&to;256&to;128&to;1</div><div>比 Actor 多 2 维输入 (contact_mask)</div>
+  <div>激活函数</div><div class="val">ELU</div><div>比 ReLU 平滑，梯度更友好</div>
+  <div>初始噪声 std</div><div class="val">1.0</div><div>动作 = 均值 + N(0,1) &times; std，std 可学习</div>
+</div>
+
+<h3>训练超参数</h3>
+<div class="param-grid">
+  <div class="hd">参数</div><div class="hd">值</div><div class="hd">对应 PPO 概念</div>
+  <div>learning_rate</div><div class="val">1e-3</div><div>Adam 优化器步长，adaptive schedule 自动调节</div>
+  <div>gamma (&gamma;)</div><div class="val">0.99</div><div>折扣因子：未来奖励的重要程度</div>
+  <div>lam (&lambda;)</div><div class="val">0.95</div><div>GAE 参数：偏差-方差权衡（第 3 章）</div>
+  <div>clip_param (&epsilon;)</div><div class="val">0.2</div><div>PPO clip 范围（第 2 章）</div>
+  <div>entropy_coef</div><div class="val">0.01</div><div>鼓励探索：熵越大动作越随机</div>
+  <div>value_loss_coef</div><div class="val">1.0</div><div>Critic loss 权重</div>
+  <div>desired_kl</div><div class="val">0.01</div><div>自适应学习率的目标 KL 散度</div>
+  <div>max_grad_norm</div><div class="val">1.0</div><div>梯度裁剪，防止梯度爆炸</div>
+  <div>empirical_normalization</div><div class="val">False</div><div>不使用经验归一化（Z1 自己在观测里做了缩放）</div>
+</div>
+
+<h3>奖励 → 优势 → 策略 的信息流</h3>
+<div class="flow">
+  <div class="flow-step"><div class="step-title">20+ 奖励项加权求和</div><div class="step-detail">track_vel + alive + energy + orientation + ...</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="step-title">GAE 计算优势 &Acirc;<sub>t</sub></div><div class="step-detail">&delta;<sub>t</sub> + (&gamma;&lambda;)&delta;<sub>t+1</sub> + ...</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="step-title">PPO Clip 目标</div><div class="step-detail">min(r&middot;A, clip(r)&middot;A) &times; entropy bonus</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="step-title">梯度下降更新 Actor 参数</div><div class="step-detail">235&to;512&to;256&to;128&to;12 权重微调</div></div>
+</div>
+
+<div class="note"><strong>调参直觉：</strong>
+&bull; 训练不稳定/崩了 → 减小 lr、减小 clip_param<br>
+&bull; 学太慢 → 增大 lr、增大 num_steps_per_env<br>
+&bull; 动作太随机不收敛 → 减小 entropy_coef<br>
+&bull; 陷入局部最优、动作太僵 → 增大 entropy_coef
+</div>
+</section>
+
+</main>
+
+<!-- ════════════════════════════════════════════════════════════════ -->
+<!-- JavaScript: All Interactive Visualizations                     -->
+<!-- ════════════════════════════════════════════════════════════════ -->
+<script>
+/* ── Utilities ── */
+const $ = id => document.getElementById(id);
+const dpr = window.devicePixelRatio || 1;
+
+function setupCanvas(id) {
+  const cv = $(id);
+  const rect = cv.getBoundingClientRect();
+  cv.width = rect.width * dpr;
+  cv.height = rect.height * dpr;
+  const ctx = cv.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { cv, ctx, W: rect.width, H: rect.height };
+}
+
+/* ── Chapter 1: Policy Gradient ── */
+let pgMean = 0, pgStd = 1, pgHistory = [];
+const PG_REWARD_PEAK = 1.5; // reward function peaks at this action value
+
+function gaussPDF(x, mu, sigma) {
+  return Math.exp(-0.5 * ((x - mu) / sigma) ** 2) / (sigma * Math.sqrt(2 * Math.PI));
+}
+
+function rewardFunc(x) {
+  // Peaks at PG_REWARD_PEAK, gaussian shape
+  return 1.5 * Math.exp(-0.5 * ((x - PG_REWARD_PEAK) / 1.0) ** 2);
+}
+
+function drawPG() {
+  const { ctx, W, H } = setupCanvas('cvPG');
+  ctx.clearRect(0, 0, W, H);
+
+  const pad = { l:50, r:20, t:20, b:40 };
+  const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+  const xMin = -4, xMax = 5;
+
+  const x2c = x => pad.l + (x - xMin) / (xMax - xMin) * pw;
+  const y2c = y => pad.t + ph - (y / 0.65) * ph;
+
+  // Grid
+  ctx.strokeStyle = '#1c2128'; ctx.lineWidth = 1;
+  for (let i = Math.ceil(xMin); i <= xMax; i++) {
+    ctx.beginPath(); ctx.moveTo(x2c(i), pad.t); ctx.lineTo(x2c(i), pad.t + ph); ctx.stroke();
+  }
+
+  // Reward landscape (green fill)
+  ctx.beginPath();
+  ctx.moveTo(x2c(xMin), y2c(0));
+  for (let px = 0; px <= pw; px++) {
+    const x = xMin + (px / pw) * (xMax - xMin);
+    ctx.lineTo(x2c(x), y2c(rewardFunc(x)));
+  }
+  ctx.lineTo(x2c(xMax), y2c(0));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(63,185,80,0.12)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(63,185,80,0.4)'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let px = 0; px <= pw; px++) {
+    const x = xMin + (px / pw) * (xMax - xMin);
+    const y = rewardFunc(x);
+    px === 0 ? ctx.moveTo(x2c(x), y2c(y)) : ctx.lineTo(x2c(x), y2c(y));
+  }
+  ctx.stroke();
+
+  // Policy distribution (blue curve)
+  ctx.beginPath();
+  ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 2.5;
+  for (let px = 0; px <= pw; px++) {
+    const x = xMin + (px / pw) * (xMax - xMin);
+    const y = gaussPDF(x, pgMean, pgStd);
+    px === 0 ? ctx.moveTo(x2c(x), y2c(y)) : ctx.lineTo(x2c(x), y2c(y));
+  }
+  ctx.stroke();
+
+  // History dots
+  pgHistory.forEach((h, i) => {
+    const alpha = 0.3 + 0.7 * (i / pgHistory.length);
+    ctx.beginPath();
+    ctx.arc(x2c(h.a), y2c(0) - 6, 4, 0, Math.PI * 2);
+    ctx.fillStyle = h.r > 0.5 ? `rgba(63,185,80,${alpha})` : `rgba(248,81,73,${alpha})`;
+    ctx.fill();
+  });
+
+  // Axis labels
+  ctx.fillStyle = '#8b949e'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
+  for (let i = Math.ceil(xMin); i <= xMax; i++) {
+    ctx.fillText(i, x2c(i), y2c(0) + 16);
+  }
+  ctx.fillText('动作 a', pad.l + pw / 2, H - 4);
+  ctx.save(); ctx.translate(14, pad.t + ph / 2); ctx.rotate(-Math.PI / 2);
+  ctx.fillText('概率密度', 0, 0); ctx.restore();
+
+  // Legend
+  ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(63,185,80,0.7)'; ctx.fillRect(pad.l + 10, pad.t + 8, 16, 10);
+  ctx.fillText('奖励函数', pad.l + 32, pad.t + 17);
+  ctx.fillStyle = '#58a6ff'; ctx.fillRect(pad.l + 10, pad.t + 24, 16, 10);
+  ctx.fillText('策略 &pi;(a|s)', pad.l + 32, pad.t + 33);
+
+  // Mean indicator
+  ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(88,166,255,0.4)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x2c(pgMean), pad.t); ctx.lineTo(x2c(pgMean), pad.t + ph); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function pgSample() {
+  const lr = parseFloat($('pgLR').value) / 100;
+  // Sample action from current policy
+  const u1 = Math.random(), u2 = Math.random();
+  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  const action = pgMean + pgStd * z;
+  const r = rewardFunc(action);
+
+  pgHistory.push({ a: action, r });
+
+  // Policy gradient update: shift mean toward higher reward
+  pgMean += lr * (action - pgMean) * r;
+
+  drawPG();
+}
+
+function pgReset() {
+  pgMean = 0; pgStd = 1; pgHistory = [];
+  drawPG();
+}
+
+$('pgLR').oninput = function() { $('pgLRv').textContent = (this.value / 100).toFixed(2); };
+
+/* ── Chapter 2: PPO Clipping ── */
+function drawClip() {
+  const { ctx, W, H } = setupCanvas('cvClip');
+  ctx.clearRect(0, 0, W, H);
+
+  const eps = parseFloat($('clipEps').value) / 100;
+  const A = parseFloat($('clipA').value) / 10;
+
+  const pad = { l:55, r:30, t:30, b:50 };
+  const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+
+  const rMin = 0, rMax = 3;
+  let objMin, objMax;
+  if (A >= 0) {
+    objMin = -0.5 * Math.abs(A);
+    objMax = Math.max(3 * A, (1 + eps) * A) * 1.15;
+  } else {
+    objMin = Math.min(3 * A, (1 - eps) * A) * 1.15;
+    objMax = 0.5 * Math.abs(A);
+  }
+  const objRange = objMax - objMin || 1;
+
+  const x2c = r => pad.l + (r - rMin) / (rMax - rMin) * pw;
+  const y2c = y => pad.t + (1 - (y - objMin) / objRange) * ph;
+
+  // Grid
+  ctx.strokeStyle = '#1c2128'; ctx.lineWidth = 1;
+  for (let r = 0; r <= 3; r += 0.5) {
+    ctx.beginPath(); ctx.moveTo(x2c(r), pad.t); ctx.lineTo(x2c(r), pad.t + ph); ctx.stroke();
+  }
+  // Zero line
+  if (objMin < 0 && objMax > 0) {
+    ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad.l, y2c(0)); ctx.lineTo(pad.l + pw, y2c(0)); ctx.stroke();
+  }
+
+  // r = 1 reference line
+  ctx.setLineDash([4, 4]); ctx.strokeStyle = '#484f58'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x2c(1), pad.t); ctx.lineTo(x2c(1), pad.t + ph); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#484f58'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('r=1', x2c(1), pad.t + ph + 14);
+
+  // Clipped region shading
+  ctx.fillStyle = 'rgba(88,166,255,0.06)';
+  ctx.fillRect(x2c(1 - eps), pad.t, x2c(1 + eps) - x2c(1 - eps), ph);
+
+  // Draw functions
+  const steps = 300;
+  const unclip = [], clipped = [], ppoObj = [];
+  for (let i = 0; i <= steps; i++) {
+    const r = rMin + (rMax - rMin) * i / steps;
+    const uc = r * A;
+    const cl = Math.min(Math.max(r, 1 - eps), 1 + eps) * A;
+    const ppo = Math.min(uc, cl);
+    unclip.push({ r, y: uc });
+    clipped.push({ r, y: cl });
+    ppoObj.push({ r, y: ppo });
+  }
+
+  function plotLine(data, color, width, dash) {
+    ctx.beginPath();
+    ctx.strokeStyle = color; ctx.lineWidth = width;
+    ctx.setLineDash(dash || []);
+    data.forEach((d, i) => {
+      const cx = x2c(d.r), cy = y2c(d.y);
+      i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Unclipped: r*A
+  plotLine(unclip, 'rgba(88,166,255,0.5)', 1.5, [6, 4]);
+  // Clipped: clip(r)*A
+  plotLine(clipped, 'rgba(248,81,73,0.5)', 1.5, [3, 3]);
+  // PPO objective: min(r*A, clip(r)*A)
+  plotLine(ppoObj, '#3fb950', 3);
+
+  // Mark clip boundaries
+  ctx.setLineDash([2, 2]); ctx.strokeStyle = 'rgba(88,166,255,0.2)'; ctx.lineWidth = 1;
+  [1 - eps, 1 + eps].forEach(rv => {
+    ctx.beginPath(); ctx.moveTo(x2c(rv), pad.t); ctx.lineTo(x2c(rv), pad.t + ph); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  // Labels
+  ctx.fillStyle = '#8b949e'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
+  ctx.fillText((1 - eps).toFixed(2), x2c(1 - eps), pad.t + ph + 14);
+  ctx.fillText((1 + eps).toFixed(2), x2c(1 + eps), pad.t + ph + 14);
+  ctx.fillText('概率比 r(θ)', pad.l + pw / 2, H - 6);
+
+  // Y axis
+  ctx.textAlign = 'right';
+  const yTicks = 5;
+  for (let i = 0; i <= yTicks; i++) {
+    const v = objMin + objRange * i / yTicks;
+    ctx.fillText(v.toFixed(1), pad.l - 8, y2c(v) + 4);
+  }
+
+  // Update explanation text
+  const explain = $('clipExplain');
+  if (A > 0) {
+    explain.textContent = `A > 0（好动作）：clip 防止 r 超过 ${(1+eps).toFixed(2)}，即防止"好动作概率暴增"。绿色实线 = PPO 实际优化目标。`;
+  } else if (A < 0) {
+    explain.textContent = `A < 0（坏动作）：clip 防止 r 低于 ${(1-eps).toFixed(2)}，即防止"坏动作概率暴跌"。绿色实线 = PPO 实际优化目标。`;
+  } else {
+    explain.textContent = 'A = 0：优势为零，PPO 目标恒为 0，策略不更新。';
+  }
+}
+
+$('clipEps').oninput = function() { $('clipEpsV').textContent = (this.value / 100).toFixed(2); drawClip(); };
+$('clipA').oninput = function() { $('clipAV').textContent = (this.value / 10).toFixed(1); drawClip(); };
+
+/* ── Chapter 3: GAE ── */
+const GAE_REWARDS = [0, 0.1, 0.3, 0.8, 1.0, 0.9, 0.4, 0.1, 0, 0];
+const GAE_VALUES  = [0.3, 0.4, 0.6, 0.9, 1.1, 1.0, 0.7, 0.4, 0.2, 0.1];
+const GAE_N = GAE_REWARDS.length;
+
+function computeGAE(rewards, values, gamma, lam) {
+  const deltas = [];
+  for (let t = 0; t < rewards.length; t++) {
+    const nextVal = t < rewards.length - 1 ? values[t + 1] : 0;
+    deltas.push(rewards[t] + gamma * nextVal - values[t]);
+  }
+  const advs = [];
+  for (let t = 0; t < rewards.length; t++) {
+    let a = 0;
+    for (let k = 0; t + k < rewards.length; k++) {
+      a += Math.pow(gamma * lam, k) * deltas[t + k];
+    }
+    advs.push(a);
+  }
+  return { deltas, advs };
+}
+
+function drawGAE() {
+  const { ctx, W, H } = setupCanvas('cvGAE');
+  ctx.clearRect(0, 0, W, H);
+
+  const lam = parseFloat($('gaeLam').value) / 100;
+  const gamma = parseFloat($('gaeGam').value) / 100;
+  const { deltas, advs } = computeGAE(GAE_REWARDS, GAE_VALUES, gamma, lam);
+
+  const pad = { l:50, r:20, t:15, b:30 };
+  const halfH = (H - pad.t - pad.b) / 2;
+  const pw = W - pad.l - pad.r;
+
+  // Top: Rewards + Values
+  const rMax = 1.3;
+  const x2c = i => pad.l + (i + 0.5) / GAE_N * pw;
+  const y2cTop = y => pad.t + halfH - (y / rMax) * halfH * 0.85;
+
+  // Divider
+  ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad.l, pad.t + halfH + 2); ctx.lineTo(pad.l + pw, pad.t + halfH + 2); ctx.stroke();
+
+  // Reward bars
+  const barW = pw / GAE_N * 0.6;
+  GAE_REWARDS.forEach((r, i) => {
+    const h = (r / rMax) * halfH * 0.85;
+    ctx.fillStyle = 'rgba(88,166,255,0.5)';
+    ctx.fillRect(x2c(i) - barW / 2, y2cTop(r), barW, y2cTop(0) - y2cTop(r));
+  });
+
+  // Value line
+  ctx.beginPath(); ctx.strokeStyle = '#484f58'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+  GAE_VALUES.forEach((v, i) => {
+    i === 0 ? ctx.moveTo(x2c(i), y2cTop(v)) : ctx.lineTo(x2c(i), y2cTop(v));
+  });
+  ctx.stroke(); ctx.setLineDash([]);
+
+  // Labels top
+  ctx.fillStyle = '#8b949e'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('奖励 (柱) + V(s) (虚线)', pad.l + pw / 2, pad.t + 12);
+
+  // Bottom: Advantages
+  const advMax = Math.max(1, Math.max(...advs.map(Math.abs)) * 1.2);
+  const y2cBot = y => pad.t + halfH + halfH - (y / advMax) * halfH * 0.8;
+
+  // Zero line
+  ctx.strokeStyle = '#30363d'; ctx.lineWidth = 1;
+  const zeroY = y2cBot(0);
+  ctx.beginPath(); ctx.moveTo(pad.l, zeroY); ctx.lineTo(pad.l + pw, zeroY); ctx.stroke();
+
+  // Advantage bars
+  advs.forEach((a, i) => {
+    const h = Math.abs(a) / advMax * halfH * 0.8;
+    const color = a >= 0 ? 'rgba(63,185,80,0.6)' : 'rgba(248,81,73,0.6)';
+    ctx.fillStyle = color;
+    if (a >= 0) {
+      ctx.fillRect(x2c(i) - barW / 2, y2cBot(a), barW, zeroY - y2cBot(a));
+    } else {
+      ctx.fillRect(x2c(i) - barW / 2, zeroY, barW, y2cBot(a) - zeroY);
+    }
+    // Value text
+    ctx.fillStyle = '#e6edf3'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(a.toFixed(2), x2c(i), a >= 0 ? y2cBot(a) - 6 : y2cBot(a) + 14);
+  });
+
+  // Step labels
+  ctx.fillStyle = '#8b949e'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  for (let i = 0; i < GAE_N; i++) {
+    ctx.fillText(`t${i}`, x2c(i), H - pad.b + 14);
+  }
+
+  // Labels bottom
+  ctx.fillStyle = '#8b949e'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText(`优势 &Acirc; (λ=${lam.toFixed(2)})`, pad.l, pad.t + halfH + 14);
+}
+
+$('gaeLam').oninput = function() { $('gaeLamV').textContent = (this.value / 100).toFixed(2); drawGAE(); };
+$('gaeGam').oninput = function() { $('gaeGamV').textContent = (this.value / 100).toFixed(2); drawGAE(); };
+
+/* ── Chapter 4: PPO Loop Animation ── */
+let ppoStep_idx = -1;
+let ppoAutoInterval = null;
+
+const PPO_EXPLAINS = [
+  '点击"下一步"开始。',
+  '<strong>采集数据</strong>：16384 个 Z1 机器人同时跑 24 步，记录每步的观测(235d)、动作(12d)、奖励(标量)。',
+  '<strong>计算优势</strong>：用 GAE(λ=0.95, γ=0.99) 把奖励序列转换为每步的优势值。优势 = 这个动作比平均水平好多少。',
+  '<strong>记录旧策略概率</strong>：保存 &pi;<sub>old</sub>(a|s)，后续计算 ratio r = &pi;<sub>new</sub>/&pi;<sub>old</sub>。',
+  '<strong>PPO 更新</strong>：用同一批数据反复训练 5 个 epoch，每个 epoch 分 4 个 mini-batch。clip(&epsilon;=0.2) 防止策略突变。同时更新 Critic 价值函数。',
+  '<strong>梯度更新</strong>：Adam 优化器 (lr=1e-3)，梯度裁剪 (max_norm=1.0)。Actor 和 Critic 参数微微变化。',
+  '<strong>循环</strong>：用新策略采集新数据，重复 50,000 次。这就是为什么 GPU 训练要好几个小时。'
+];
+
+function ppoUpdateUI() {
+  for (let i = 0; i < 6; i++) {
+    const step = $('fs' + i);
+    const arrow = $('fa' + i);
+    step.classList.toggle('active', i <= ppoStep_idx);
+    if (arrow) arrow.classList.toggle('active', i <= ppoStep_idx);
+  }
+  $('ppoExplain').innerHTML = PPO_EXPLAINS[Math.min(ppoStep_idx + 1, 6)];
+}
+
+function ppoStep() {
+  if (ppoStep_idx < 5) { ppoStep_idx++; ppoUpdateUI(); }
+}
+
+function ppoReset() {
+  if (ppoAutoInterval) { clearInterval(ppoAutoInterval); ppoAutoInterval = null; }
+  ppoStep_idx = -1;
+  ppoUpdateUI();
+}
+
+function ppoAutoPlay() {
+  if (ppoAutoInterval) { clearInterval(ppoAutoInterval); ppoAutoInterval = null; }
+  ppoReset();
+  ppoAutoInterval = setInterval(() => {
+    if (ppoStep_idx < 5) { ppoStep_idx++; ppoUpdateUI(); }
+    else { clearInterval(ppoAutoInterval); ppoAutoInterval = null; }
+  }, 1500);
+}
+
+/* ── Nav Active State ── */
+const sections = document.querySelectorAll('.chapter');
+const navLinks = document.querySelectorAll('nav a');
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      navLinks.forEach(a => a.classList.remove('active'));
+      const link = document.querySelector(`nav a[href="#${e.target.id}"]`);
+      if (link) link.classList.add('active');
+    }
+  });
+}, { rootMargin: '-20% 0px -60% 0px' });
+sections.forEach(s => observer.observe(s));
+
+/* ── Init ── */
+function initAll() {
+  drawPG();
+  drawClip();
+  drawGAE();
+}
+window.addEventListener('load', initAll);
+window.addEventListener('resize', initAll);
+</script>
+</body>
+</html>

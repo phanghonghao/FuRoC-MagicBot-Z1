@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Plot Z1 training learning curves from TensorBoard event files.
 
-Generates 4 plots:
-  1. All runs reward comparison
-  2. Reward decomposition (selected run)
-  3. Termination reasons (selected run)
-  4. Training efficiency (selected run)
+Generates 4 plots per focus run:
+  1. Reward trend (peak/best annotations + progress bar)
+  2. Reward decomposition (top components + curriculum)
+  3. Termination reasons + episode length
+  4. Training efficiency (entropy, LR, throughput)
 
 Usage:
   python plot_learning_curves.py --log_root <path> --output_dir <path>
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from pathlib import Path
 
 import matplotlib
@@ -58,6 +59,9 @@ RUN_ALIASES = {
     "2026-05-04_12-34-00_s3_rough_l1_mgpu_4gpu": "s3_rough_l1_mgpu_4gpu",
     "2026-05-04_12-40-26_s3_rough_l1_4gpu": "s3_rough_l1_4gpu",
     "2026-05-04_16-56-05_s4_full_terrain": "s4_full",
+    "2026-05-05_04-47-06_s4_flat_deploy": "s4_flat_deploy",
+    "2026-05-05_13-57-30_s5_explicit_pd": "s5_explicit_pd",
+    "2026-05-06_04-55-58_phase_p1": "phase_p1",
 }
 
 # Best model info (from best_models.json)
@@ -71,7 +75,11 @@ BEST_MODELS = {
     "s3_rough_l2": {"iter": 32790, "reward": 38.04},
     "s3_rough_l1": {"iter": 1778, "reward": 5.86},
     "s3_rough_l1_4gpu": {"iter": 5032, "reward": 31.20},
-    "s4_full": {"iter": None, "reward": None},  # still training
+    "s3_rough_l1_mgpu": {"iter": 49999, "reward": -0.46},
+    "s3_rough_l1_mgpu_4gpu": {"iter": 49999, "reward": -1.68},
+    "s4_full": {"iter": 8296, "reward": 58.95},
+    "s4_flat_deploy": {"iter": 924, "reward": 30.99},
+    "s5_explicit_pd": {"iter": 2217, "reward": 24.09},
 }
 
 # Runs to skip (no data or test runs)
@@ -123,57 +131,75 @@ def smooth(values: list[float], window: int = 50) -> list[float]:
     return smoothed.tolist()
 
 
-# ── Plot 1: All runs reward comparison ────────────────────────────────────── #
+# ── Plot 1: Single run reward trend ──────────────────────────────────────── #
 
-def plot_reward_comparison(all_data: dict, output_dir: str):
-    """Plot mean_reward for all runs on one figure."""
-    fig, ax = plt.subplots(figsize=(14, 7))
+def plot_reward_trend(data: dict, alias: str, output_dir: str):
+    """Plot mean_reward trend for a single run with peak/best annotations + progress bar."""
+    steps = data["Train/mean_reward"]["steps"]
+    values = data["Train/mean_reward"]["values"]
+    sv = smooth(values, window=50)
 
-    # Sort runs by peak reward (best first)
-    run_order = []
-    for alias, data in all_data.items():
-        if "Train/mean_reward" in data:
-            peak = max(data["Train/mean_reward"]["values"])
-            run_order.append((peak, alias))
-    run_order.sort(reverse=True)
+    fig, (ax, ax_bar) = plt.subplots(
+        2, 1, figsize=(14, 7.5), height_ratios=[10, 1],
+        gridspec_kw={"hspace": 0.25},
+    )
 
-    for i, (_, alias) in enumerate(run_order):
-        data = all_data[alias]
-        steps = data["Train/mean_reward"]["steps"]
-        values = data["Train/mean_reward"]["values"]
-        color = COLORS[i % len(COLORS)]
+    # Raw + smoothed
+    ax.plot(steps, values, color="#c0c0c0", linewidth=0.4, alpha=0.5, label="Raw")
+    ax.plot(steps, sv, color="#1f77b4", linewidth=1.5, label="MA-50")
 
-        # Smooth for cleaner line
-        sv = smooth(values, window=max(1, len(values) // 200))
+    # Peak reward
+    peak_idx = int(np.argmax(sv))
+    peak_val = sv[peak_idx]
+    peak_step = steps[peak_idx]
+    ax.axvline(x=peak_step, color="orange", linestyle="--", alpha=0.7, linewidth=1.2)
+    ax.annotate(
+        f"Peak: {peak_val:.2f}\n(iter {peak_step})",
+        xy=(peak_step, peak_val),
+        xytext=(15, 5), textcoords="offset points",
+        fontsize=8, color="orange", fontweight="bold",
+        arrowprops=dict(arrowstyle="->", color="orange", lw=1),
+    )
 
-        ax.plot(steps, sv, color=color, linewidth=1.2, alpha=0.85, label=alias)
+    # Best model checkpoint
+    if alias in BEST_MODELS and BEST_MODELS[alias]["iter"] is not None:
+        best_iter = BEST_MODELS[alias]["iter"]
+        best_reward = BEST_MODELS[alias]["reward"]
+        ax.axvline(x=best_iter, color="red", linestyle="--", alpha=0.7, linewidth=1.2)
+        ax.annotate(
+            f"Best ckpt: {best_reward:.2f}\n(iter {best_iter})",
+            xy=(best_iter, ax.get_ylim()[1] * 0.6),
+            xytext=(15, 0), textcoords="offset points",
+            fontsize=8, color="red", fontweight="bold",
+            arrowprops=dict(arrowstyle="->", color="red", lw=1),
+        )
 
-        # Annotate best model
-        if alias in BEST_MODELS and BEST_MODELS[alias]["iter"] is not None:
-            best_iter = BEST_MODELS[alias]["iter"]
-            best_reward = BEST_MODELS[alias]["reward"]
-            # Find closest step index
-            idx = min(range(len(steps)), key=lambda j: abs(steps[j] - best_iter))
-            ax.plot(steps[idx], sv[idx], "v", color=color, markersize=8, zorder=5)
-            ax.annotate(
-                f"best: {best_reward:.1f}",
-                xy=(steps[idx], sv[idx]),
-                xytext=(10, 5),
-                textcoords="offset points",
-                fontsize=7,
-                color=color,
-                fontweight="bold",
-            )
+    # Current value annotation
+    current_val = sv[-1]
+    current_step = steps[-1]
+    ax.annotate(
+        f"Current: {current_val:.2f}",
+        xy=(current_step, current_val),
+        xytext=(-15, 10), textcoords="offset points",
+        fontsize=8, color="#1f77b4", fontweight="bold",
+    )
 
-    ax.set_xlabel("Iteration")
     ax.set_ylabel("Mean Episode Reward")
-    ax.set_title("Z1 12DOF — All Training Runs: Mean Reward Comparison")
-    ax.legend(loc="upper right", ncol=2, framealpha=0.9)
-    ax.set_ylim(bottom=min(-10, ax.get_ylim()[0]))
+    ax.set_title(f"{alias} — Reward Trend")
+    ax.legend(loc="upper right", framealpha=0.9)
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x/1000:.0f}k"))
+    ax.grid(True, alpha=0.3)
+
+    # Progress bar
+    ax_bar.barh(0, current_step, height=0.5, color="#2ca02c", alpha=0.6)
+    ax_bar.set_xlim(0, max(current_step * 1.05, 1000))
+    ax_bar.set_yticks([])
+    ax_bar.set_xlabel(f"Iteration ({current_step:,})")
+    ax_bar.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x/1000:.0f}k"))
+    ax_bar.set_title("Training Progress", fontsize=10, pad=2)
 
     fig.tight_layout()
-    path = os.path.join(output_dir, "1_reward_comparison.png")
+    path = os.path.join(output_dir, f"1_reward_trend_{alias}.png")
     fig.savefig(path, dpi=150)
     plt.close(fig)
     print(f"  Saved: {path}")
@@ -380,7 +406,7 @@ def main():
     parser.add_argument("--log_root", required=True, help="Path to log root dir")
     parser.add_argument("--output_dir", default=".", help="Output directory for PNGs")
     parser.add_argument("--focus_run", default=None,
-                        help="Run dir name for detailed plots (plots 2-4). "
+                        help="Run dir name for all plots. "
                              "Default: auto-select the run with most data points.")
     args = parser.parse_args()
 
@@ -399,7 +425,7 @@ def main():
         if not events:
             continue
 
-        alias = RUN_ALIASES.get(run_dir, run_dir[:30])
+        alias = RUN_ALIASES.get(run_dir, re.sub(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_", "", run_dir))
         print(f"  Loading {alias}...", end=" ", flush=True)
         data = load_run_data(run_path)
         n_pts = len(data.get("Train/mean_reward", {}).get("steps", []))
@@ -408,7 +434,7 @@ def main():
         if n_pts > 100:  # skip tiny test runs
             all_data[alias] = data
 
-    # Select focus run for detailed plots
+    # Select focus run
     if args.focus_run:
         focus_alias = RUN_ALIASES.get(args.focus_run, args.focus_run)
     else:
@@ -425,17 +451,18 @@ def main():
                     best_alias = alias
         focus_alias = best_alias
 
-    print(f"\n  Focus run for detailed analysis: {focus_alias}")
+    print(f"\n  Focus run for all plots: {focus_alias}")
 
-    # Generate all 4 plots
+    # Generate all 4 plots for focus run
     print("\n=== Generating plots ===")
-    plot_reward_comparison(all_data, args.output_dir)
-
     if focus_alias and focus_alias in all_data:
         focus_data = all_data[focus_alias]
+        plot_reward_trend(focus_data, focus_alias, args.output_dir)
         plot_reward_decomposition(focus_data, focus_alias, args.output_dir)
         plot_termination(focus_data, focus_alias, args.output_dir)
         plot_efficiency(focus_data, focus_alias, args.output_dir)
+    else:
+        print(f"  WARNING: focus run '{focus_alias}' not found in loaded data")
 
     print(f"\n=== Done! All plots saved to {args.output_dir} ===")
 
