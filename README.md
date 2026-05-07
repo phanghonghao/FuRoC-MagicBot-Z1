@@ -2,6 +2,43 @@
 
 RL locomotion training pipeline for **MagicBot Z1 12DOF bipedal robot**, built on Isaac Lab + rsl_rl.
 
+## Results
+
+### Pipeline Demo
+
+<p align="center">
+  <img src="docs/pipeline_p1p2_demo.gif" alt="P1-P2 Pipeline Demo (Isaac Lab + MuJoCo)" width="60%">
+</p>
+
+> **4-phase curriculum learning** — P1 Coarse → P1 Fine → P2 Coarse → P2 Fine. Left column: Isaac Lab simulation. Right column: MuJoCo sim2sim validation.
+
+### Curriculum Reward Trends
+
+<p align="center">
+  <img src="docs/curriculum_reward_trends.png" alt="Curriculum Reward Trends" width="90%">
+</p>
+
+> Reward curves across 4 sub-phases. P1 (flat terrain, bootstrap → standing), P2 (flat, velocity tracking). Each phase resumes from the best checkpoint of the previous phase.
+
+### P2 Fine Reward Decomposition
+
+<p align="center">
+  <img src="docs/reward_trend_p2_fine.png" alt="P2 Fine Reward Trend" width="45%">
+  &nbsp;
+  <img src="docs/reward_decomposition_p2_fine.png" alt="P2 Fine Reward Decomposition" width="45%">
+</p>
+
+> **Left**: P2 Fine total reward trend. **Right**: Individual reward component decomposition — velocity tracking, orientation, base height, foot contact, action rate penalty, and torque penalty.
+
+### Pre-trained Models
+
+| Phase | Policy | Path | Description |
+|-------|--------|------|-------------|
+| P1 Coarse | Standing | `models/p/p1_coarse/p1_coarse_policy.pt` | Bootstraps standing from random init |
+| P1 Fine | Standing | `models/p/p1_fine/p1_fine_policy.pt` | Fine-tuned stable standing on flat terrain |
+| P2 Coarse | Locomotion | `models/p/p2_coarse/p2_coarse_policy.pt` | Initial velocity tracking on flat terrain |
+| P2 Fine | Locomotion | `models/p/p2_fine/p2_fine_policy.pt` | Fine-tuned velocity tracking with gait shaping |
+
 ## Directory Structure
 
 ```
@@ -10,8 +47,17 @@ Magicbot_Z1/
 ├── magicbot-z1_description/  # URDF/Mesh (official)
 ├── magicbot-z1_sdk/          # Robot SDK (official)
 ├── configs/                  # Custom env configs & scripts
-├── docs/                     # Training plans, analysis, TODOs
-├── models/                   # Best policy checkpoints (Git LFS)
+├── docs/                     # Training plans, analysis, plots, demo GIFs
+│   ├── pipeline_p1p2_demo.gif
+│   ├── curriculum_reward_trends.png
+│   ├── reward_decomposition_p2_fine.png
+│   └── reward_trend_p2_fine.png
+├── models/
+│   └── p/                    # Pipeline policy checkpoints (Git LFS)
+│       ├── p1_coarse/
+│       ├── p1_fine/
+│       ├── p2_coarse/
+│       └── p2_fine/
 ├── videos/                   # Training demo videos (Git LFS)
 ├── IsaacLab/                 # Isaac Lab framework (.gitignored)
 └── README.md
@@ -62,15 +108,19 @@ python sim2sim/mujoco_deploy.py --ckpt=<path_to_model>
 python deploy/robot_deploy.py
 ```
 
-## Training Pipeline
+## 5-Phase Automated Pipeline
 
-| Stage | Terrain | Goal | Status |
-|-------|---------|------|--------|
-| s1 | Flat | Standing | Done |
-| s2 | Flat | Walking | Done |
-| s3 | 50% flat + 50% gentle grid | Light terrain | Done |
-| s4 | Flat + grid + stairs + gap + boxes | Rough terrain | In progress |
-| s5 | Full terrain + rails | Complex + high speed | Planned |
+Fully automated training pipeline with overfitting detection, auto-rollback, and phase advancement.
+
+| Phase | Terrain | Key Goal | Sub-phases | Status |
+|-------|---------|----------|------------|--------|
+| P1 | Flat | Bootstrap standing | coarse → fine | Done |
+| P2 | Flat | Velocity tracking | coarse → fine | Done |
+| P3 | 50% flat + 50% gentle grid | Light terrain walking | coarse → fine | In progress |
+| P4 | Flat + grid + stairs + gap + boxes | Rough terrain | coarse → fine | Planned |
+| P5 | Full terrain + rails | Complex + high speed | coarse → fine | Planned |
+
+Each sub-phase: config generation → distributed PPO training → overfitting detection → video recording → advance. Orchestrator auto-detects 5 failure signals (reward decline, policy collapse, action explosion, entropy collapse, value divergence) and rolls back if needed.
 
 ## Documentation
 
@@ -81,6 +131,7 @@ python deploy/robot_deploy.py
 
 ## Hardware
 
-- **GPU**: RTX 6000D (85 GB VRAM)
-- **Environments**: 4096 parallel
-- **Training time**: ~28-35h / 50K iterations
+- **GPU**: 4 × RTX 6000D (85 GB VRAM each)
+- **Training**: `torchrun` distributed PPO, 16,384 parallel envs (4,096/GPU)
+- **Throughput**: ~330K steps/s (4 GPUs)
+- **Framework**: Isaac Lab + rsl_rl
