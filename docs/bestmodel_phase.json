@@ -1,0 +1,88 @@
+{
+  "source": "5-phase-pipeline",
+  "plan": "z1_5phase_plan.yaml",
+  "generated_at": "2026-05-07T12:00:00+08:00",
+  "phases": [
+    {
+      "phase_id": "p1",
+      "phase_name": "Flat — Bootstrap",
+      "status": "COMPLETE",
+      "sub_phases": [
+        {
+          "id": "p1_coarse",
+          "run_dir": "2026-05-06_15-47-12_p1_coarse",
+          "best_model": "model_2900.pt",
+          "best_iteration": 2900,
+          "completed_at": "2026-05-07T00:56:05+08:00"
+        },
+        {
+          "id": "p1_fine",
+          "run_dir": "2026-05-06_17-40-13_p1_fine",
+          "best_model": "model_2800.pt",
+          "best_iteration": 2800,
+          "reward": 2.90,
+          "time_out": "92.9%",
+          "bad_orientation": "7.1%",
+          "completed_at": "2026-05-07T01:44:00+08:00"
+        }
+      ],
+      "phase_best": "p1_fine/model_2800.pt",
+      "phase_best_reward": 2.90
+    },
+    {
+      "phase_id": "p2",
+      "phase_name": "Flat — Velocity Tracking",
+      "status": "COMPLETE (via zombie data)",
+      "note": "p2 sub-phases completed using old zombie run data (not fresh pipeline training)",
+      "sub_phases": [
+        {
+          "id": "p2_coarse",
+          "run_dir": "2026-05-06_18-49-40_p2_coarse",
+          "best_model": "model_2900.pt",
+          "best_iteration": 2900,
+          "peak_reward": 42.68,
+          "final_reward": 33.02,
+          "note": "zombie data, pipeline detected overfitting from old data"
+        },
+        {
+          "id": "p2_fine",
+          "run_dir": "2026-05-06_19-33-51_p2_fine",
+          "best_model": "model_3200.pt",
+          "best_iteration": 3200,
+          "peak_reward": 49.68,
+          "final_reward": 38.32,
+          "note": "zombie data, pipeline detected overfitting from old data"
+        }
+      ],
+      "phase_best": "p2_fine/model_3200.pt",
+      "phase_best_reward": 38.32
+    },
+    {
+      "phase_id": "p3",
+      "phase_name": "Gentle Terrain",
+      "status": "RUNNING",
+      "sub_phases": [
+        {
+          "id": "p3_coarse",
+          "run_dir": "2026-05-07_03-56-16_p3_coarse",
+          "status": "TRAINING",
+          "current_reward": 4.23,
+          "current_iteration": 65,
+          "started_at": "2026-05-07T11:56:16+08:00"
+        }
+      ]
+    },
+    {
+      "phase_id": "p4",
+      "phase_name": "Rough Terrain",
+      "status": "PENDING",
+      "sub_phases": []
+    },
+    {
+      "phase_id": "p5",
+      "phase_name": "Full Terrain + Polish",
+      "status": "PENDING",
+      "sub_phases": []
+    }
+  ]
+}

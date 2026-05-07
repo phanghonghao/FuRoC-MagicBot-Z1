@@ -16,12 +16,12 @@
 % ── Header ────────────────────────────────────────────────────────────── %
 \begin{minipage}{0.65\textwidth}
   {\LARGE\bfseries Z1 12DOF Training Report}\\[2pt]
-  {\large Run: \texttt{p1\_fine} \quad|\quad 2026-05-07 13:05}
+  {\large Run: \texttt{p3\_coarse} \quad|\quad 2026-05-07 13:06}
 \end{minipage}%
 \hfill
 \begin{minipage}{0.3\textwidth}
   \raggedleft
-  {\large\bfseries\textcolor{red!70!black}{OVERFITTING}}
+  {\large\bfseries\textcolor{green!60!black}{HEALTHY}}
 \end{minipage}
 
 \vspace{3pt}
@@ -35,8 +35,8 @@
 \textbf{Peak Reward} & \textbf{@ Iter} & \textbf{Best Ckpt} & \textbf{Best Reward}
   & \textbf{Latest} & \textbf{@ Iter} & \textbf{Episode Len} \\
 \hline
-6.19 & 2,749 & model\_2754.pt & 5.54
-  & 2.90 & 2,885 & 951 \\
+34.23 & 1,797 & model\_652.pt & 31.73
+  & 30.35 & 1,981 & 927 \\
 \hline
 \end{tabularx}
 
@@ -47,12 +47,12 @@
 % Row 1: Reward Trend + Reward Decomposition
 \begin{minipage}[t]{0.49\textwidth}
   \centering
-  \includegraphics[width=\textwidth,height=0.38\textheight,keepaspectratio]{D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/plots/p1_fine/1_reward_trend.png}
+  \includegraphics[width=\textwidth,height=0.38\textheight,keepaspectratio]{D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/plots/p3_coarse/1_reward_trend.png}
 \end{minipage}%
 \hfill
 \begin{minipage}[t]{0.49\textwidth}
   \centering
-  \includegraphics[width=\textwidth,height=0.38\textheight,keepaspectratio]{D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/plots/p1_fine/2_reward_decomposition.png}
+  \includegraphics[width=\textwidth,height=0.38\textheight,keepaspectratio]{D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/plots/p3_coarse/2_reward_decomposition.png}
 \end{minipage}
 
 \vspace{1pt}
@@ -60,12 +60,12 @@
 % Row 2: Termination + Efficiency
 \begin{minipage}[t]{0.49\textwidth}
   \centering
-  \includegraphics[width=\textwidth,height=0.38\textheight,keepaspectratio]{D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/plots/p1_fine/3_termination.png}
+  \includegraphics[width=\textwidth,height=0.38\textheight,keepaspectratio]{D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/plots/p3_coarse/3_termination.png}
 \end{minipage}%
 \hfill
 \begin{minipage}[t]{0.49\textwidth}
   \centering
-  \includegraphics[width=\textwidth,height=0.38\textheight,keepaspectratio]{D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/plots/p1_fine/4_efficiency.png}
+  \includegraphics[width=\textwidth,height=0.38\textheight,keepaspectratio]{D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/plots/p3_coarse/4_efficiency.png}
 \end{minipage}
 
 \vspace{2pt}
@@ -75,13 +75,13 @@
 % ── Analysis ──────────────────────────────────────────────────────────── %
 \footnotesize
 \textbf{Analysis} \\[1pt]
-\textbf{Overfitting detected.} Reward declined 53.2\% from peak (2.90 vs peak 6.19 @ iter 2,749).
-Best checkpoint at iter 2,754 (reward 5.54), saved before significant degradation began.
-Stable locomotion: 93% episodes timeout (complete), fall rate only 0.07.
-Mean episode length: 951/1000 steps (95% of max).
-Moderate velocity tracking: error = 0.414.
+\textbf{Healthy training.} Policy converged steadily with peak reward 34.23 @ iter 1,797.
+Best model reward 31.73 (gap from peak: 2.50).
+Stable locomotion: 87% episodes timeout (complete), fall rate only 0.13.
+Mean episode length: 927/1000 steps (93% of max).
+Moderate velocity tracking: error = 0.437.
 
 \textbf{Recommendations:}
-Moderate overfitting --- try entropy bonus increase or shorter training schedule.
+Continue monitoring; consider deploying best checkpoint for sim2sim validation.
 
 \end{document}
