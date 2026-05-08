@@ -1,7 +1,7 @@
 {
   "source": "5-phase-pipeline",
   "plan": "z1_5phase_plan.yaml",
-  "generated_at": "2026-05-07T12:00:00+08:00",
+  "generated_at": "2026-05-07T22:10:00+08:00",
   "phases": [
     {
       "phase_id": "p1",
@@ -13,7 +13,12 @@
           "run_dir": "2026-05-06_15-47-12_p1_coarse",
           "best_model": "model_2900.pt",
           "best_iteration": 2900,
-          "completed_at": "2026-05-07T00:56:05+08:00"
+          "completed_at": "2026-05-07T00:56:05+08:00",
+          "local_models": {
+            "checkpoint": "models/p/p1_coarse/p1_coarse_model_2900.pt",
+            "jit_policy": "models/p/p1_coarse/p1_coarse_policy.pt"
+          },
+          "video": "videos/p/p1_coarse/"
         },
         {
           "id": "p1_fine",
@@ -23,7 +28,12 @@
           "reward": 2.90,
           "time_out": "92.9%",
           "bad_orientation": "7.1%",
-          "completed_at": "2026-05-07T01:44:00+08:00"
+          "completed_at": "2026-05-07T01:44:00+08:00",
+          "local_models": {
+            "checkpoint": "models/p/p1_fine/p1_fine_model_2800.pt",
+            "jit_policy": "models/p/p1_fine/p1_fine_policy.pt"
+          },
+          "video": "videos/p/p1_fine/"
         }
       ],
       "phase_best": "p1_fine/model_2800.pt",
@@ -40,18 +50,34 @@
           "run_dir": "2026-05-06_18-49-40_p2_coarse",
           "best_model": "model_2900.pt",
           "best_iteration": 2900,
+          "latest_model": "model_3900.pt",
+          "latest_iteration": 3900,
           "peak_reward": 42.68,
           "final_reward": 33.02,
-          "note": "zombie data, pipeline detected overfitting from old data"
+          "note": "zombie data, pipeline detected overfitting from old data",
+          "local_models": {
+            "checkpoint_best": "models/p/p2_coarse/p2_coarse_model_2900.pt",
+            "checkpoint_latest": "models/p/p2_coarse/p2_coarse_model_3900.pt",
+            "jit_policy": "models/p/p2_coarse/p2_coarse_policy.pt"
+          },
+          "video": "videos/p/p2_coarse/"
         },
         {
           "id": "p2_fine",
           "run_dir": "2026-05-06_19-33-51_p2_fine",
           "best_model": "model_3200.pt",
           "best_iteration": 3200,
+          "latest_model": "model_3600.pt",
+          "latest_iteration": 3600,
           "peak_reward": 49.68,
           "final_reward": 38.32,
-          "note": "zombie data, pipeline detected overfitting from old data"
+          "note": "zombie data, pipeline detected overfitting from old data",
+          "local_models": {
+            "checkpoint_best": "models/p/p2_fine/p2_fine_model_3200.pt",
+            "checkpoint_latest": "models/p/p2_fine/p2_fine_model_3600.pt",
+            "jit_policy": "models/p/p2_fine/p2_fine_policy.pt"
+          },
+          "video": "videos/p/p2_fine/"
         }
       ],
       "phase_best": "p2_fine/model_3200.pt",
@@ -66,9 +92,11 @@
           "id": "p3_coarse",
           "run_dir": "2026-05-07_03-56-16_p3_coarse",
           "status": "TRAINING",
-          "current_reward": 4.23,
-          "current_iteration": 65,
-          "started_at": "2026-05-07T11:56:16+08:00"
+          "current_reward": 29.80,
+          "current_iteration": 10150,
+          "started_at": "2026-05-07T11:56:16+08:00",
+          "local_models": null,
+          "note": "training in progress, models not yet downloaded"
         }
       ]
     },

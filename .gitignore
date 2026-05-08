@@ -39,3 +39,6 @@ remote_server_manual_extracted.txt
 
 # Training checkpoints (only models/ tracked via LFS)
 **/model_*.pt
+
+# 履历
+履历/

@@ -81,6 +81,12 @@ p5 (full terrain + polish)
 
 **目标**: 引入地形，70% flat + 30% random_grid。
 
+#### Stage 3 v1 (原版 — 过拟合 + 跌倒多)
+
+> p3_coarse: bad_ori 11.9%, reward peak 37.19 → 30.33 (↓18.7%)
+> p3_fine: bad_ori 13.6%, reward peak 34.02 → 25.95 (↓23.7%)
+> 根因: flat→terrain 跨度太大，penalties 太紧，entropy 不够
+
 | 参数 | p3_coarse | p3_fine |
 |------|-----------|---------|
 | 地形 | 70% flat + 30% grid [0,0.4] | 70% flat + 30% grid [0,0.5] |
@@ -91,7 +97,23 @@ p5 (full terrain + polish)
 | flat_orientation | -5.0 | -7.0 |
 | action_rate | -0.04 | -0.05 |
 | feet_clearance | 1.0 | 1.0 |
+| base_height | -8.0 | -10.0 |
 | undesired_contacts | 0 | -1.5 |
+
+#### Stage 3 v2 (当前 — 降低地形难度，放松惩罚)
+
+| 参数 | p3_coarse | p3_fine | 变更说明 |
+|------|-----------|---------|----------|
+| 地形 | 70% flat + 30% grid **[0,0.25]** | 70% flat + 30% grid **[0,0.35]** | ↓ 地形难度 |
+| LR | **3e-4** | **2e-4** | ↓ 更慢收敛 |
+| entropy | **0.015** | **0.012** | ↑ 更多探索 |
+| track_lin_vel | 1.5 | 2.0 | — |
+| alive | **0.5** | **0.3** | ↑ 增加存活奖励 |
+| flat_orientation | **-3.0** | **-5.0** | ↓ 放松姿态约束 |
+| base_height | **-5.0** | **-7.0** | ↓ 放松高度约束 |
+| action_rate | -0.04 | -0.05 | — |
+| feet_clearance | **0.5** | **0.8** | ↓ 渐进引入 |
+| undesired_contacts | 0 | -1.5 | — |
 
 ### Phase 4: Rough Terrain (50K iter)
 
