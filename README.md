@@ -7,7 +7,7 @@ RL locomotion training pipeline for **MagicBot Z1 12DOF bipedal robot**, built o
 ### Pipeline Demo
 
 <p align="center">
-  <img src="docs/pipeline_p1p2_demo.gif" alt="P1-P2 Pipeline Demo (Isaac Lab + MuJoCo)" width="60%">
+  <img src="docs/github_readme/pipeline_p1p2_demo.gif" alt="P1-P2 Pipeline Demo (Isaac Lab + MuJoCo)" width="60%">
 </p>
 
 > **4-phase curriculum learning** — P1 Coarse → P1 Fine → P2 Coarse → P2 Fine. Left column: Isaac Lab simulation. Right column: MuJoCo sim2sim validation.
@@ -15,7 +15,7 @@ RL locomotion training pipeline for **MagicBot Z1 12DOF bipedal robot**, built o
 ### Curriculum Reward Trends
 
 <p align="center">
-  <img src="docs/curriculum_reward_trends.png" alt="Curriculum Reward Trends" width="90%">
+  <img src="docs/github_readme/curriculum_reward_trends.png" alt="Curriculum Reward Trends" width="90%">
 </p>
 
 > Reward curves across 4 sub-phases. P1 (flat terrain, bootstrap → standing), P2 (flat, velocity tracking). Each phase resumes from the best checkpoint of the previous phase.
@@ -23,12 +23,20 @@ RL locomotion training pipeline for **MagicBot Z1 12DOF bipedal robot**, built o
 ### P2 Fine Reward Decomposition
 
 <p align="center">
-  <img src="docs/reward_trend_p2_fine.png" alt="P2 Fine Reward Trend" width="45%">
+  <img src="docs/github_readme/reward_trend_p2_fine.png" alt="P2 Fine Reward Trend" width="45%">
   &nbsp;
-  <img src="docs/reward_decomposition_p2_fine.png" alt="P2 Fine Reward Decomposition" width="45%">
+  <img src="docs/github_readme/reward_decomposition_p2_fine.png" alt="P2 Fine Reward Decomposition" width="45%">
 </p>
 
 > **Left**: P2 Fine total reward trend. **Right**: Individual reward component decomposition — velocity tracking, orientation, base height, foot contact, action rate penalty, and torque penalty.
+
+### Sim2Sim Gap: Terrain-Trained Policies in MuJoCo
+
+<p align="center">
+  <img src="docs/github_readme/p3_fine_sim2sim_broken.gif" alt="P3 Fine sim2sim broken in MuJoCo" width="45%">
+</p>
+
+> **P3 Fine policy (gentle terrain training) deployed to MuJoCo** — the robot repeatedly falls. Flat-trained policies (P1, P2) transfer successfully, but terrain-trained policies fail due to sim2sim physics gap (contact/friction model differences). One root cause: policies trained on rough terrain cannot walk on flat ground in a different simulator.
 
 ### Pre-trained Models
 
@@ -48,6 +56,7 @@ Magicbot_Z1/
 ├── magicbot-z1_sdk/          # Robot SDK (official)
 ├── configs/                  # Custom env configs & scripts
 ├── docs/                     # Training plans, analysis, plots, demo GIFs
+│   ├── github_readme/        # Demo GIFs & plots for README
 │   ├── pipeline_p1p2_demo.gif
 │   ├── curriculum_reward_trends.png
 │   ├── reward_decomposition_p2_fine.png
@@ -116,7 +125,8 @@ Fully automated training pipeline with overfitting detection, auto-rollback, and
 |-------|---------|----------|------------|--------|
 | P1 | Flat | Bootstrap standing | coarse → fine | Done |
 | P2 | Flat | Velocity tracking | coarse → fine | Done |
-| P3 | 50% flat + 50% gentle grid | Light terrain walking | coarse → fine | In progress |
+| P3 | 70% flat + 30% gentle grid | Light terrain walking | coarse → fine | Done |
+| P3b | 50% flat + 30% grid + 10% stairs + 10% boxes | Intermediate terrain | coarse → fine | In progress |
 | P4 | Flat + grid + stairs + gap + boxes | Rough terrain | coarse → fine | Planned |
 | P5 | Full terrain + rails | Complex + high speed | coarse → fine | Planned |
 
