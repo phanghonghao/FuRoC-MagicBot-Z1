@@ -75,3 +75,48 @@
 - **sim2sim gap confirmed**: Flat-trained policies (p1, p2) transfer to MuJoCo successfully. Terrain-trained policies (p3, p3b) do NOT transfer — they either fall repeatedly (p3: 20 falls) or freeze (p3b: 0m movement, 0 falls).
 - **Root cause hypothesis**: Terrain curriculum introduces observation dependencies on Isaac Sim-specific contact/friction physics that MuJoCo does not replicate identically. The policy learns to exploit Isaac Sim terrain features that don't exist in MuJoCo.
 - **Terrain generation working**: MuJoCo hfield injection via Python API works correctly for all terrain types (flat, p3 gentle, p3b intermediate).
+
+---
+
+## [Session] 本地 MuJoCo 键盘测试 + 相位感知部署
+
+### Completed
+
+| # | Item | Details |
+|---|------|---------|
+| 1 | mujoco_manual.py 重构 | 合并 terrain patch → 正式版 `sim2sim/mujoco_manual.py`。添加 `--phase` 参数 + `PHASE_TERRAIN` 映射（p1/p2→flat, p3→p3, p3b→p3b, p4→p3b）。`--terrain` 优先于 `--phase`。 |
+| 2 | yaml.safe_load 修复 | `yaml.safe_load` → `yaml.unsafe_load`，修复 deploy.yaml 中 `!!python/object/apply:builtins.slice` 解析失败。 |
+| 3 | MUJOCO_GL 平台兼容 | Windows 不设 `MUJOCO_GL=egl`（仅 Linux 需要），修复 Windows 启动报错。 |
+| 4 | PD gains 修复 | **Root cause**: 训练已用 IdealPDActuator（显式 PD），跟 MuJoCo 一样，不需要 30% KD boost。之前硬编码的 DEFAULT_KD [5.2, 5.2, 6.5, 3.9] 是旧 ImplicitActuator 时代的补偿。**Fix**: KP/KD 从 deploy.yaml 加载（[4.0, 4.0, 5.0, 3.0]），default_joint_pos 硬编码（deploy.yaml 导出 joint 顺序与 MuJoCo 不匹配）。 |
+| 5 | 本地 p2_fine 键盘测试 | **结果**: 150+ 秒仅 1 次摔倒，z≈0.66 稳定站立。对比修复前 256 次/200 秒，大幅改善。 |
+| 6 | Viewer 问题 | MuJoCo viewer 未能弹出（headless 模式运行）。已加错误打印，待下次调试。 |
+
+### 测试结果
+
+| 测试 | Phase | 地形 | 结果 | 备注 |
+|------|-------|------|------|------|
+| p2_fine 修复前 | p2 | flat | 256 falls / 200s | KD=5.2 (30% boost)，deploy.yaml 覆盖后反而更差 |
+| p2_fine 修复后 | p2 | flat | 1 fall / 150s | KD=4.0 (训练原值)，稳定站立 |
+
+### Bug Fixes
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| YAML 解析失败 | `yaml.safe_load` 不支持 `!!python/object/apply:builtins.slice` | → `yaml.unsafe_load` |
+| Windows MUJOCO_GL 报错 | EGL 仅 Linux 支持，Windows 应使用默认 wgl | 添加 `os.name != "nt"` 判断 |
+| 机器人反复摔倒 | DEFAULT_KD 硬编码 30% boost (5.2)，但训练已用 IdealPD (显式 PD)，boost 反而有害 | KP/KD 从 deploy.yaml 加载，不 boost |
+| MuJoCo viewer 不弹出 | `launch_passive()` 异常被静默吞掉 | 加 `as e` 打印具体错误 |
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `mujoco_terrain_patch.py` → `sim2sim/mujoco_manual.py` | 合并重构：--phase 参数、yaml 修复、MUJOCO_GL 修复、PD gains 修复 |
+| `sim2sim/mujoco_manual.py` (本地) | 新建 |
+| `magiclab_rl_lab/sim2sim/mujoco_manual.py` (RTX 镜像) | 同步更新 |
+
+### Next Steps
+
+- [ ] 调试 MuJoCo viewer 不弹出问题（打印具体异常）
+- [ ] 测试 --phase p3b + 地形键盘控制
+- [ ] 上传到 RTX: `scp sim2sim/mujoco_manual.py phh@192.168.120.155:~/magiclab_rl_lab/sim2sim/`
