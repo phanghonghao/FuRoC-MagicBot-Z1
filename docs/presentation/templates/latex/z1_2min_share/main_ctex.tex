@@ -1,0 +1,234 @@
+\documentclass[aspectratio=169, 9pt]{beamer}
+\usepackage[UTF8]{ctex}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{tikz}
+\usepackage{hyperref}
+\usepackage{animate}           % PDF 内嵌动画
+
+% ── Theme ──
+\usetheme{Madrid}
+\usecolortheme{whale}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\setbeamersize{text margin left=6mm, text margin right=6mm}
+
+% ── Colors ──
+\definecolor{nvgreen}{RGB}{118,185,0}
+\definecolor{dkblue}{RGB}{0,60,113}
+\definecolor{lgray}{RGB}{240,240,240}
+\setbeamercolor{title}{fg=white, bg=dkblue}
+\setbeamercolor{frametitle}{fg=white, bg=dkblue}
+\setbeamercolor{block title}{bg=nvgreen, fg=white}
+\setbeamercolor{block body}{bg=lgray}
+\setbeamercolor{item}{fg=nvgreen}
+
+% ── Image path ──
+\graphicspath{{sources/}}
+
+% ── Compact spacing ──
+\setlength{\parskip}{0pt}
+
+\begin{document}
+
+% ================================================================
+% Page 1: Title
+% ================================================================
+\begin{frame}[plain]
+  \begin{columns}[c]
+    \begin{column}{0.55\textwidth}
+      \vspace{1.2cm}
+      {\Large\bfseries\color{dkblue} MagicBot Z1 12DOF}\\[6pt]
+      {\large 基于强化学习的双足机器人运动控制}\\[10pt]
+      {\small\color{gray} Isaac Lab + PPO $\mid$ 16384 envs $\mid$ Curriculum Learning}\\[16pt]
+      {\footnotesize MagicLab \quad$\mid$\quad 2026.05}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \centering
+      \includegraphics[width=0.82\textwidth]{z1_mujoco.png}\\[3pt]
+      {\scriptsize Z1 12DOF 双足机器人 (MuJoCo)}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ================================================================
+% Page 2: System Architecture
+% ================================================================
+\begin{frame}{系统架构 — Two-Platform Training Pipeline}
+  \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+      \begin{block}{RTX 6000 远程训练}
+        \begin{itemize}\footnotesize
+          \item 8$\times$ RTX 6000 GPU (85GB VRAM)
+          \item 16384 并行仿真环境
+          \item Isaac Lab + rsl\_rl PPO
+          \item 自动化 5-Phase Pipeline
+        \end{itemize}
+      \end{block}
+      \vspace{2pt}
+      \begin{block}{本地分析 \& 验证}
+        \begin{itemize}\footnotesize
+          \item MuJoCo Sim2Sim 验证
+          \item 学习曲线 \& 过拟合分析
+          \item 键盘实时操控测试
+        \end{itemize}
+      \end{block}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \begin{block}{5-Phase Curriculum}
+        \centering\small
+        \begin{tikzpicture}[
+          phase/.style={draw, rounded corners, fill=nvgreen!15,
+                        minimum width=2.6cm, minimum height=0.45cm,
+                        font=\scriptsize},
+          arr/.style={->, thick, color=dkblue}
+        ]
+          \node[phase] (p1) at (0,0)    {P1 平地粗训};
+          \node[phase] (p2) at (0,-0.7) {P2 平地精调};
+          \node[phase] (p3) at (0,-1.4) {P3 缓坡地形};
+          \node[phase] (p3b) at (0,-2.1){P3b 中等地形};
+          \node[phase] (p4) at (0,-2.8) {P4 复杂地形};
+          \draw[arr] (p1) -- (p2);
+          \draw[arr] (p2) -- (p3);
+          \draw[arr] (p3) -- (p3b);
+          \draw[arr] (p3b) -- (p4);
+        \end{tikzpicture}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ================================================================
+% Page 3: Training Strategy
+% ================================================================
+\begin{frame}{训练策略 — Reward 设计 \& PPO}
+  \begin{columns}[T]
+    \begin{column}{0.42\textwidth}
+      {\scriptsize\bfseries\color{dkblue} 激励项}
+      \begin{itemize}\scriptsize
+        \item XY 速度跟踪 \hfill $w\!=\!1.0$
+        \item 角速度跟踪 \hfill $w\!=\!0.5$
+        \item 存活奖励 \hfill $w\!=\!0.15$
+        \item 足部接触时序 \hfill $w\!=\!0.5$
+        \item 足部摆动高度 \hfill $w\!=\!1.0$
+      \end{itemize}
+      \vspace{3pt}
+      {\scriptsize\bfseries\color{red!70!black} 惩罚项}
+      \begin{itemize}\scriptsize
+        \item Z 轴速度 \hfill $w\!=\!-2.0$
+        \item 身体姿态偏移 \hfill $w\!=\!-5.0$
+        \item 基座高度偏差 \hfill $w\!=\!-10.0$
+        \item 能量消耗 \hfill $w\!=\!-2\!\times\!10^{-5}$
+        \item 足部滑动 \hfill $w\!=\!-0.2$
+        \item 动作变化率 \hfill $w\!=\!-0.1$
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.55\textwidth}
+      \centering
+      \includegraphics[width=0.95\textwidth,height=0.52\textheight,keepaspectratio]{reward_decomposition.png}\\[1pt]
+      {\scriptsize P2 Fine — 各 Reward Component 贡献趋势}
+      \vspace{3pt}
+      \begin{block}{\scriptsize PPO 配置}
+        \scriptsize
+        \begin{tabular}{@{}ll@{}}
+          网络 & MLP (32, 32), Actor-Critic \\
+          Learning Rate & $3\times10^{-4}$ \\
+          Entropy Coeff & 0.01 \\
+          GAE $\lambda$ & 0.95 \\
+        \end{tabular}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ================================================================
+% Page 4: Training Results (with animated demo)
+% ================================================================
+\begin{frame}{训练成果}
+  \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+      \centering
+      \includegraphics[width=0.92\textwidth,height=0.42\textheight,keepaspectratio]{curriculum_reward_trends.png}\\[1pt]
+      {\scriptsize Curriculum — 多 Phase Reward 趋势}
+      \vspace{2pt}
+      % ── Animated GIF: P1->P2 training demo ──
+      \animategraphics[autoplay,loop,width=0.40\textwidth]{10}{sources/demo/frame_}{0}{66}\\[1pt]
+      {\scriptsize P1$\to$P2 训练演示 (自动播放)}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \begin{block}{\scriptsize 关键指标}
+        \centering\scriptsize
+        \begin{tabular}{@{}lc@{}}
+          \toprule
+          \textbf{指标} & \textbf{数值} \\
+          \midrule
+          P2 最佳 Reward & 49.68 \\
+          步态距离 (Sim2Sim) & 4.0m / 10s \\
+          Sim2Sim 摔倒率 & 0\% \\
+          本地测试距离 & 12.0m / 25.5s \\
+          本地摔倒率 & 0.06\% \\
+          \bottomrule
+        \end{tabular}
+      \end{block}
+      \vspace{2pt}
+      \begin{block}{\scriptsize 训练规模}
+        \scriptsize
+        \begin{itemize}
+          \item 16384 并行环境
+          \item 5-Phase 自动化 Pipeline
+          \item 训练 $\to$ 导出 $\to$ Sim2Sim 验证
+        \end{itemize}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ================================================================
+% Page 5: Sim2Sim & Next Steps (with animated sim2sim)
+% ================================================================
+\begin{frame}{Sim2Sim 验证 \& 下一步}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{\scriptsize Sim2Sim 验证结果}
+        \centering\scriptsize
+        \begin{tabular}{@{}lcc@{}}
+          \toprule
+          \textbf{Phase} & \textbf{地形} & \textbf{MuJoCo} \\
+          \midrule
+          P1 Fine  & 平地 & \textcolor{nvgreen}{\checkmark{} OK} \\
+          P2 Fine  & 平地 & \textcolor{nvgreen}{\checkmark{} OK} \\
+          P3 Fine  & 缓坡 & \textcolor{red}{$\times$ 20 falls} \\
+          P3b Fine & 中等 & \textcolor{red}{$\times$ 冻结} \\
+          \bottomrule
+        \end{tabular}
+      \end{block}
+      \vspace{2pt}
+      % ── Animated GIF: Sim2Sim failure ──
+      \centering
+      \animategraphics[autoplay,loop,width=0.55\textwidth]{10}{sources/sim2sim/frame_}{0}{99}\\[1pt]
+      {\scriptsize P3 Sim2Sim 失败 (自动播放)}
+    \end{column}
+    \begin{column}{0.49\textwidth}
+      \begin{block}{\scriptsize 核心发现}
+        \scriptsize
+        \begin{itemize}
+          \item 平地策略 $\to$ MuJoCo 迁移成功
+          \item 地形策略 $\to$ Sim2Sim Gap
+          \item 原因：物理引擎差异（接触力/摩擦）
+        \end{itemize}
+      \end{block}
+      \vspace{2pt}
+      \begin{alertblock}{\scriptsize 下一步计划}
+        \scriptsize
+        \begin{enumerate}
+          \item 解决 Sim2Sim Gap\\ {\tiny 观测空间对齐 + 物理参数标定}
+          \item Sim2Real 真机部署\\ {\tiny Domain Randomization + 降阶}
+          \item 复杂地形自适应行走\\ {\tiny 越障、楼梯、不平地面}
+        \end{enumerate}
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\end{document}

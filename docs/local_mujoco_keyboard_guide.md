@@ -24,20 +24,81 @@ python sim2sim\mujoco_manual.py --mjcf magicbot-z1_description\mjcf\MAGICBOTZ1.x
 
 | 按键 | 功能 | 速度范围 | 步长 |
 |------|------|----------|------|
-| W | 前进加速 | 0 → 1.0 m/s | +0.1 |
-| S | 后退加速 | 0 → -0.5 m/s | -0.1 |
-| A | 左转 | 0 → -0.5 rad/s | -0.1 |
-| D | 右转 | 0 → 0.5 rad/s | +0.1 |
+| Up | 前进加速 | 0 → 1.0 m/s | +0.1 |
+| Down | 后退加速 | 0 → -0.5 m/s | -0.1 |
+| Left | 左转 | 0 → -0.5 rad/s | -0.1 |
+| Right | 右转 | 0 → 0.5 rad/s | +0.1 |
 | Q | 左侧移 | 0 → 0.5 m/s | +0.1 |
 | E | 右侧移 | 0 → -0.5 m/s | -0.1 |
 | Space | 停止（归零） | — | — |
 | Esc | 退出 | — | — |
+| Tab | 折叠/展开左侧面板 | — | — |
+
+> 使用方向键而非 WASD，避免与 MuJoCo Viewer 内置的相机/灯光快捷键冲突。
 
 > 速度范围与训练一致: `lin_vel_x=[-0.5, 1.0]`, `lin_vel_y=[-0.5, 0.5]`, `ang_vel_z=[-0.5, 0.5]`
 
 ---
 
-## 3. 显式 PD 说明
+## 3. Viewer 面板说明
+
+MuJoCo Viewer 默认三栏布局：**左面板 | 3D 视图 | 右面板**
+
+### 面板折叠
+
+| 操作 | 方式 |
+|------|------|
+| 折叠/展开左侧面板 | 按 **Tab** 键 |
+| 折叠右侧面板 | 点击右侧面板标题栏上的 **折叠箭头** |
+| 展开 | 再次点击折叠箭头 |
+
+### 面板内容
+
+**左侧面板** — 渲染与仿真控制：
+- 渲染选项（线框、阴影、透明度等）
+- 仿真速度控制
+- 几何体组开关（显示/隐藏碰撞体、关节轴等）
+
+**右侧面板** — 关节与执行器数据（重点关注）：
+
+| 区域 | 内容 | 关注点 |
+|------|------|--------|
+| **Joint** | 各关节角度 (qpos) | 关节是否达到目标位置 |
+| **Joint** | 各关节角速度 (qvel) | 运动是否平滑 |
+| **Control** | 各执行器输出 (ctrl) | 即 PD 控制器输出的力矩 |
+| **Sensor** | 传感器数据 | IMU 角速度、姿态等 |
+
+> 右侧面板的 **Control** 区域显示的就是关节力矩（单位 N·m），即 PD 控制器输出 `τ = kp × (q_des - q) - kd × q̇` 的值。如果力矩持续达到限幅（120 N·m for hip/knee, 50 N·m for ankle），说明关节饱和。
+
+### 3D 视图控制
+
+| 操作 | 方式 |
+|------|------|
+| 旋转视角 | 鼠标左键拖拽 |
+| 平移视角 | 鼠标右键拖拽 |
+| 缩放 | 鼠标滚轮 |
+| 恢复视角 | 双击鼠标左键 |
+
+---
+
+## 4. 训练指标查看
+
+MuJoCo Viewer 只显示物理仿真状态（关节、力矩、传感器），**不包含训练指标**。
+
+训练指标（reward、time_out、entropy 等）的查看方式：
+
+| 指标 | 查看方式 |
+|------|----------|
+| 实时训练指标 | `/gpu-train --tail`（从 RTX 服务器读取日志） |
+| 训练趋势分析 | `/gpu-train --check` |
+| 过拟合检测 | `/gpu-train --monitor` |
+| 学习曲线图表 | `/plot-train-Z1` |
+| 历史训练记录 | `docs/training_logs/training_log_*.md` |
+| Phase 进度总览 | `docs/bestmodel_phase.json` |
+
+---
+
+## 5. 显式 PD 说明
 
 训练环境使用 `IdealPDActuatorCfg`（显式 PD），MuJoCo 部署也是显式 PD，公式完全一致：
 
@@ -56,11 +117,11 @@ python sim2sim\mujoco_manual.py --mjcf magicbot-z1_description\mjcf\MAGICBOTZ1.x
 | Kd (knee) | 5.0 | 5.0 | 5.0 |
 | Kd (ankle) | 3.0 | 3.0 | 3.0 |
 
-`default_joint_pos` 保持硬编码（deploy.yaml 导出的 joint 顺序与 MuJoCo 不匹配）。
+`default_joint_pos` 保持硬编码（来源于 `magiclab_rl_lab/source/.../assets/robots/magiclab.py` 中的 `IdealPDActuatorCfg`，按 MuJoCo joint 顺序排列）。deploy.yaml 导出的 joint 顺序与 MuJoCo 不匹配，不从 deploy.yaml 读取。
 
 ---
 
-## 4. 相位感知地形映射
+## 6. 相位感知地形映射
 
 ```python
 PHASE_TERRAIN = {
@@ -76,7 +137,7 @@ PHASE_TERRAIN = {
 
 ---
 
-## 5. 参数说明
+## 7. 参数说明
 
 ```
 --mjcf         (必填) MAGICBOTZ1.xml 路径
@@ -96,7 +157,7 @@ PHASE_TERRAIN = {
 
 ---
 
-## 6. 常用指令
+## 8. 常用指令
 
 ### 指定 phase 自动加载地形
 
@@ -128,7 +189,7 @@ scp D:\Desktop_Files\GPU-Train\RTX6000\Magicbot_Z1\magiclab_rl_lab\sim2sim\mujoc
 
 ---
 
-## 7. 文件位置
+## 9. 文件位置
 
 | 文件 | 路径 | 用途 |
 |------|------|------|
@@ -138,7 +199,7 @@ scp D:\Desktop_Files\GPU-Train\RTX6000\Magicbot_Z1\magiclab_rl_lab\sim2sim\mujoc
 
 ---
 
-## 8. 依赖
+## 10. 依赖
 
 | 依赖 | 用途 |
 |------|------|

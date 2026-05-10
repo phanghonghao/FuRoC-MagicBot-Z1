@@ -120,3 +120,58 @@
 - [ ] 调试 MuJoCo viewer 不弹出问题（打印具体异常）
 - [ ] 测试 --phase p3b + 地形键盘控制
 - [ ] 上传到 RTX: `scp sim2sim/mujoco_manual.py phh@192.168.120.155:~/magiclab_rl_lab/sim2sim/`
+
+---
+
+## [17:30] Session Summary — MuJoCo 键盘/CSV/分析管线完整开发
+
+### Completed
+
+| # | Item | Details |
+|---|------|---------|
+| 1 | WASD→箭头键迁移 | MuJoCo Viewer WASD 与内置相机控制冲突。改为 GLFW 箭头键 (265=UP, 264=DOWN, 263=LEFT, 262=RIGHT)。msvcrt 后备也支持箭头键。`Files: sim2sim/mujoco_manual.py` |
+| 2 | Viewer 面板控制 | `launch_passive` 默认显示左右面板（不做 auto-hide）。Tab 键切换左面板，右面板点击箭头折叠。`Files: sim2sim/mujoco_manual.py` |
+| 3 | CSV 日志系统 | `--csv` flag (`nargs='?', const='auto'`)。裸 `--csv` 自动命名 `logs/p/{phase}/{phase}_{timestamp}.csv`，`--csv path.csv` 自定义路径。50 列：step, time, x/y/z, 12 qpos, 12 qvel, 12 tau, 12 action, 3 cmd, fall。`Files: sim2sim/mujoco_manual.py` |
+| 4 | 分析脚本 analyze_sim_log.py | 生成 6 张图：01_trajectory, 02_torques, 03_torque_histogram, 04_joint_angles, 05_actions, 06_velocity_height。输出到 CSV 同级 `plots/` 目录。`Files: scripts/analyze_sim_log.py` |
+| 5 | 目录结构重组 | `logs/` 扁平目录 → `logs/p/<sub_phase>/` 分阶段组织。移动已有 CSV 和图到新路径。 |
+| 6 | GBK 编码修复 | analyze_sim_log.py 中 Unicode 字符在 Windows GBK 终端报错。`Fix`: `✓` → `[OK]`, `⚠` → `[!]`。`Files: scripts/analyze_sim_log.py` |
+| 7 | p2_fine --csv 测试 | 7243 步 / 25.5s，0.06% fall rate，12m 前进。CSV + 6 图 + LLM 数据分析全流程验证通过。CSV: `logs/p/p2_fine/p2_fine_20260510_172605.csv` |
+| 8 | 踝关节非对称分析 | 发现策略学到的固定非对称：ank_p L=9.6 vs R=17.3 N·m (ratio 0.55)。4 个时间段恒定，不随转向变化。原因：角度偏差 1-2° 经 PD 放大。默认关节角完全对称，非对称来自策略本身。 |
+| 9 | RTX 同步 | mujoco_manual.py 和 analyze_sim_log.py 同步到 RTX 镜像。`Files: magiclab_rl_lab/sim2sim/mujoco_manual.py, magiclab_rl_lab/scripts/analyze_sim_log.py` |
+| 10 | 文档更新 | `docs/local_mujoco_keyboard_guide.md` 更新：箭头键控制表、Tab 面板切换、训练指标查看方式。 |
+
+### Bug Fixes
+
+| Bug | Root Cause | Fix | Files |
+|-----|-----------|-----|-------|
+| WASD 触发 MuJoCo 相机控制 | GLFW WASD 与 MuJoCo 内置 WASD 冲突 | 改用箭头键 GLFW 265/264/263/262 | `mujoco_manual.py` |
+| GBK UnicodeEncodeError | Windows 终端不支持 ✓ ⚠ 字符 | 替换为 [OK] [!] | `analyze_sim_log.py` |
+| auto-hide 面板后无法恢复 | 设置了 show_left_ui=False | 改为默认显示，Tab 手动切换 | `mujoco_manual.py` |
+
+### Analysis Results (p2_fine, 7243 steps)
+
+| Metric | Value |
+|--------|-------|
+| Duration | 25.5s @ 50Hz |
+| Distance | 12.0m forward, 6.4m lateral (keyboard turns) |
+| Falls | 4 (0.06%) |
+| Mean torque | 12.2 N·m, max 68.0 N·m |
+| Saturation | 0% (>100 N·m) |
+| Height | 0.645m ± 0.018m |
+| Action jitter | 0.190 mean, 9.84 max |
+| Ankle pitch symmetry | L/R ratio 0.55 [!] |
+
+### Uncompleted / Blocked
+
+| # | Item | Blocker | Next Step |
+|---|------|---------|-----------|
+| 1 | Skill 文档更新 (--csv flag) | Skill markdown 未记录 --csv 参数和箭头键 | 更新 gpu-train skill --local_play 部分 |
+| 2 | 长时间 --csv 测试 | 仅测试 7243 步 | 跑 10000+ 步测试，验证大量数据下的分析稳定性 |
+| 3 | Git push | 未 commit/push 本地修改 | 整理 commit 并 push |
+
+### Key Decisions
+
+- **箭头键替代 WASD**: 彻底避免与 MuJoCo Viewer 内置快捷键冲突
+- **CSV 直接分析优于图片分析**: 精确、快速，无需 MCP image analysis
+- **logs/p/<sub_phase>/ 结构**: 按阶段组织 CSV 和分析图，避免扁平目录混乱
+- **策略非对称不修复**: ankle pitch ratio 0.55 是 RL 策略特性，平地影响小（0.06% fall），rough terrain 时监控

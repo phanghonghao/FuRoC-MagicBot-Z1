@@ -58,10 +58,10 @@ def generate_terrain_data(terrain_type="p3b", seed=42):
     H_SCALE = 0.1  # meters per grid cell (matches Isaac Sim horizontal_scale)
 
     if terrain_type == "p3":
-        # p3: gentle terrain — flat 70% + random_grid 30% (height 0-0.25m)
+        # p3: gentle terrain — flat 70% + random_grid 30% (height 0-0.4m)
         TERRAIN_L = 24.0
         TERRAIN_W = 8.0
-        MAX_ELEV = 0.25  # max height in p3 is 0.25m
+        MAX_ELEV = 0.4  # match IsaacSim grid_height_range=(0.0, 0.4)
     elif terrain_type == "p3b":
         # p3b: intermediate terrain — flat 50% + random_grid 30% + stairs 10% + boxes 10%
         TERRAIN_L = 24.0
@@ -120,7 +120,7 @@ def generate_terrain_data(terrain_type="p3b", seed=42):
     for c0, c1, stype in sections:
         if stype == "random_grid":
             if terrain_type == "p3":
-                fill_random_grid(0, nrow, c0, c1, h_range=(0.0, 0.25))
+                fill_random_grid(0, nrow, c0, c1, h_range=(0.0, 0.4))
             else:
                 fill_random_grid(0, nrow, c0, c1)
         elif stype == "stairs":
@@ -189,6 +189,8 @@ def parse_args():
     parser.add_argument("--phase", type=str, default=None,
                         help="Phase ID (p1/p2/p3/p3b/p4) — auto-selects terrain. Explicit --terrain takes priority.")
     parser.add_argument("--show_viewer", action="store_true", default=True, help="Show MuJoCo viewer")
+    parser.add_argument("--csv", type=str, default=None, nargs='?', const='auto',
+                        help="Log simulation data to CSV. --csv alone auto-names; --csv path.csv uses custom path")
     return parser.parse_args()
 
 
@@ -296,7 +298,17 @@ class ObservationBuffer:
 
 class KeyboardController:
     # GLFW key codes (used by MuJoCo viewer)
-    GLFW_KEYS = {87: 'w', 83: 's', 65: 'a', 68: 'd', 81: 'q', 69: 'e', 32: 'space', 256: 'esc'}
+    # Arrow keys avoid conflict with MuJoCo viewer's built-in WASD camera/lighting controls
+    GLFW_KEYS = {
+        265: 'up',       # GLFW_KEY_UP
+        264: 'down',     # GLFW_KEY_DOWN
+        263: 'left',     # GLFW_KEY_LEFT
+        262: 'right',    # GLFW_KEY_RIGHT
+        81: 'q',         # GLFW_KEY_Q
+        69: 'e',         # GLFW_KEY_E
+        32: 'space',     # GLFW_KEY_SPACE
+        256: 'esc',      # GLFW_KEY_ESCAPE
+    }
 
     def __init__(self, initial_vel=None):
         self.vel_cmd = np.array(initial_vel, dtype=np.float64) if initial_vel is not None else np.array([0.0, 0.0, 0.0])
@@ -305,7 +317,7 @@ class KeyboardController:
         self.vel_step = 0.1
         self.running = True
         self.viewer_active = False  # set True when MuJoCo viewer callback is registered
-        print("Keyboard control: W/S=forward/back, A/D=turn, Q/E=lateral, Space=stop, Esc=quit")
+        print("Keyboard control: Up/Down=forward/back, Left/Right=turn, Q/E=lateral, Space=stop, Esc=quit")
 
     def handle_viewer_key(self, keycode):
         """Callback for MuJoCo viewer key presses (GLFW keycodes)."""
@@ -330,24 +342,25 @@ class KeyboardController:
 
     def _apply_msvcrt(self, key):
         """Convert msvcrt byte to key name and apply."""
-        mapping = {b'w': 'w', b's': 's', b'a': 'a', b'd': 'd',
-                   b'q': 'q', b'e': 'e', b' ': 'space', b'\x1b': 'esc'}
+        mapping = {b'w': 'up', b's': 'down', b'a': 'left', b'd': 'right',
+                   b'q': 'q', b'e': 'e', b' ': 'space', b'\x1b': 'esc',
+                   b'H': 'up', b'P': 'down', b'K': 'left', b'M': 'right'}
         key_name = mapping.get(key)
         if key_name:
             self._apply_key(key_name)
 
     def _apply_key(self, key):
         """Shared key action handler."""
-        if key == 'w':
+        if key == 'up':
             self.vel_cmd[0] = min(self.vel_cmd[0] + self.vel_step, self.lin_vel_range[1])
             self._print_vel()
-        elif key == 's':
+        elif key == 'down':
             self.vel_cmd[0] = max(self.vel_cmd[0] - self.vel_step, self.lin_vel_range[0])
             self._print_vel()
-        elif key == 'a':
+        elif key == 'left':
             self.vel_cmd[2] = max(self.vel_cmd[2] - self.vel_step, self.ang_vel_range[0])
             self._print_vel()
-        elif key == 'd':
+        elif key == 'right':
             self.vel_cmd[2] = min(self.vel_cmd[2] + self.vel_step, self.ang_vel_range[1])
             self._print_vel()
         elif key == 'q':
@@ -408,6 +421,8 @@ class MuJoCoDeploy:
             self.action_scale = np.array(action_cfg.get("scale", [ACTION_SCALE] * 12))
             self.action_offset = np.array(action_cfg.get("offset", DEFAULT_JOINT_POS.tolist()))
         else:
+            self.kp = DEFAULT_KP.copy()
+            self.kd = DEFAULT_KD.copy()
             self.action_scale = np.full(12, ACTION_SCALE)
             self.action_offset = DEFAULT_JOINT_POS.copy()
 
@@ -459,11 +474,13 @@ class MuJoCoDeploy:
 
         self.obs_buffer = ObservationBuffer()
         self.last_action = np.zeros(12)
+        self.last_torques = np.zeros(12)
         self.sim_time = 0.0
         self.reset()
 
     def reset(self):
         import mujoco
+        self.vel_cmd[:] = 0.0
         mujoco.mj_resetData(self.model, self.data)
         self.data.qpos[2] = 0.69
         self.data.qpos[3] = 1.0
@@ -534,6 +551,7 @@ class MuJoCoDeploy:
             for i, act_id in enumerate(self.leg_actuator_ids):
                 self.data.ctrl[act_id] = torques[i]
             mujoco.mj_step(self.model, self.data)
+        self.last_torques = torques.copy()
         self.sim_time += CONTROL_DT
         if self.data.qpos[2] < 0.3 or (self.data.qpos[4]**2 + self.data.qpos[5]**2 + self.data.qpos[6]**2) > 0.5:
             return True
@@ -581,6 +599,37 @@ def main():
     print(f"[INFO] Observation: {OBS_DIM_TOTAL}d ({OBS_DIM_PER_FRAME}d x {HISTORY_LENGTH} frames)")
     print(f"[INFO] Velocity command: {vel_cmd}")
 
+    # CSV data logger
+    csv_file = None
+    csv_writer = None
+    csv_path = None
+    LOG_JOINT_NAMES_SHORT = [
+        "hip_p_l", "hip_r_l", "hip_y_l", "knee_p_l", "ank_p_l", "ank_r_l",
+        "hip_p_r", "hip_r_r", "hip_y_r", "knee_p_r", "ank_p_r", "ank_r_r",
+    ]
+    if args.csv:
+        import csv
+        if args.csv == 'auto':
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            phase_tag = args.phase or "test"
+            csv_path = f"logs/p/{phase_tag}/{phase_tag}_{timestamp}.csv"
+        else:
+            csv_path = args.csv
+        log_dir = os.path.dirname(csv_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        csv_file = open(csv_path, 'w', newline='')
+        csv_header = ['step', 'time', 'x', 'y', 'z']
+        csv_header += [f'qpos_{n}' for n in LOG_JOINT_NAMES_SHORT]
+        csv_header += [f'qvel_{n}' for n in LOG_JOINT_NAMES_SHORT]
+        csv_header += [f'tau_{n}' for n in LOG_JOINT_NAMES_SHORT]
+        csv_header += [f'action_{n}' for n in LOG_JOINT_NAMES_SHORT]
+        csv_header += ['cmd_vx', 'cmd_vy', 'cmd_vyaw', 'fall']
+        csv_writer = csv.writer(csv_file)
+        csv_writer.writerow(csv_header)
+        print(f"[INFO] Logging data to {csv_path}")
+
     import mujoco
     from mujoco import viewer as mujoco_viewer
     viewer = None
@@ -599,11 +648,14 @@ def main():
     elif args.show_viewer:
         try:
             if kb_controller:
-                viewer = mujoco_viewer.launch_passive(env.model, env.data, key_callback=kb_controller.handle_viewer_key)
+                viewer = mujoco_viewer.launch_passive(
+                    env.model, env.data,
+                    key_callback=kb_controller.handle_viewer_key,
+                )
                 kb_controller.viewer_active = True
             else:
                 viewer = mujoco_viewer.launch_passive(env.model, env.data)
-            print("[INFO] Viewer launched (close window to end)")
+            print("[INFO] Viewer launched (Tab=toggle left panel, close window to end)")
         except Exception as e:
             print(f"[WARNING] Could not launch MuJoCo viewer: {e}")
             viewer = None
@@ -622,6 +674,22 @@ def main():
             if fell:
                 env.reset()
                 fall_count += 1
+                if kb_controller:
+                    kb_controller.vel_cmd[:] = 0.0
+
+            if csv_writer:
+                state = env.get_robot_state()
+                qpos = [env.data.qpos[a] for a in env.leg_qpos_addr]
+                qvel = [env.data.qvel[a] for a in env.leg_dof_addr]
+                row = [step, f"{state['time']:.4f}",
+                       f"{state['x']:.4f}", f"{state['y']:.4f}", f"{state['z']:.4f}"]
+                row += [f"{v:.4f}" for v in qpos]
+                row += [f"{v:.4f}" for v in qvel]
+                row += [f"{v:.2f}" for v in env.last_torques]
+                row += [f"{v:.4f}" for v in env.last_action]
+                row += [f"{env.vel_cmd[0]:.2f}", f"{env.vel_cmd[1]:.2f}", f"{env.vel_cmd[2]:.2f}",
+                        1 if fell else 0]
+                csv_writer.writerow(row)
 
             if renderer:
                 renderer.update_scene(env.data, camera=cam)
@@ -657,6 +725,11 @@ def main():
             viewer.close()
         except Exception:
             pass
+
+    if csv_file:
+        csv_file.close()
+        print(f"[INFO] Log saved: {csv_path} ({step+1} rows)")
+        print(f"[ANALYZE] python -c \"import pandas as pd; print(pd.read_csv('{csv_path}').describe())\"")
 
     print("[INFO] Simulation ended")
 
