@@ -1,0 +1,189 @@
+{
+  "source": "5-phase-pipeline",
+  "plan": "z1_5phase_plan.yaml",
+  "updated_at": "2026-05-11T12:00:00+08:00",
+  "phases": [
+    {
+      "phase_id": "p1",
+      "phase_name": "Flat — Bootstrap",
+      "status": "COMPLETE",
+      "sub_phases": [
+        {
+          "id": "p1_coarse",
+          "run_dir": "2026-05-06_15-47-12_p1_coarse",
+          "best_model": "model_2900.pt",
+          "best_iteration": 2900,
+          "best_reward": 15.61,
+          "peak_reward": 16.34,
+          "status": "OVERFITTING (entropy collapse 97.5%)",
+          "completed_at": "2026-05-07T00:56:05+08:00",
+          "local_models": {
+            "checkpoint": "models/p/p1_coarse/p1_coarse_model_2900.pt",
+            "jit_policy": "models/p/p1_coarse/p1_coarse_policy.pt"
+          },
+          "video": "videos/p/p1_coarse/"
+        },
+        {
+          "id": "p1_fine",
+          "run_dir": "2026-05-06_17-40-13_p1_fine",
+          "best_model": "model_2800.pt",
+          "best_iteration": 2800,
+          "best_reward": 5.54,
+          "peak_reward": 6.19,
+          "status": "OVERFITTING (reward declined 48.7%)",
+          "completed_at": "2026-05-07T01:44:00+08:00",
+          "local_models": {
+            "checkpoint": "models/p/p1_fine/p1_fine_model_2800.pt",
+            "jit_policy": "models/p/p1_fine/p1_fine_policy.pt"
+          },
+          "video": "videos/p/p1_fine/"
+        }
+      ],
+      "phase_best": "p1_fine/model_2800.pt",
+      "phase_best_reward": 5.54
+    },
+    {
+      "phase_id": "p2",
+      "phase_name": "Flat — Velocity Tracking",
+      "status": "COMPLETE (via zombie data)",
+      "note": "p2 sub-phases completed using old zombie run data (not fresh pipeline training)",
+      "sub_phases": [
+        {
+          "id": "p2_coarse",
+          "run_dir": "2026-05-06_18-49-40_p2_coarse",
+          "best_model": "model_2917.pt",
+          "best_iteration": 2917,
+          "best_reward": 41.46,
+          "peak_reward": 42.68,
+          "status": "OVERFITTING (reward declined 22.1%)",
+          "local_models": {
+            "checkpoint": "models/p/p2_coarse/p2_coarse_model_2900.pt",
+            "jit_policy": "models/p/p2_coarse/p2_coarse_policy.pt"
+          },
+          "video": "videos/p/p2_coarse/"
+        },
+        {
+          "id": "p2_fine",
+          "run_dir": "2026-05-06_19-33-51_p2_fine",
+          "best_model": "model_3168.pt",
+          "best_iteration": 3168,
+          "best_reward": 48.30,
+          "peak_reward": 49.68,
+          "status": "OVERFITTING (reward declined 21.8%)",
+          "local_models": {
+            "checkpoint": "models/p/p2_fine/p2_fine_model_3200.pt",
+            "jit_policy": "models/p/p2_fine/p2_fine_policy.pt"
+          },
+          "video": "videos/p/p2_fine/"
+        }
+      ],
+      "phase_best": "p2_fine/model_3168.pt",
+      "phase_best_reward": 48.30
+    },
+    {
+      "phase_id": "p3",
+      "phase_name": "Gentle Terrain",
+      "status": "COMPLETE",
+      "sub_phases": [
+        {
+          "id": "p3_coarse",
+          "run_dir": "2026-05-10_19-16-47_p3_coarse",
+          "best_model": "model_5800.pt",
+          "best_iteration": 5800,
+          "best_reward": 36.37,
+          "peak_reward": 36.37,
+          "status": "PAUSED (reward rebalance, resuming from model_5800)",
+          "time_out": 85.8,
+          "bad_orientation": 14.2,
+          "vel_error": 0.39,
+          "note": "Standing-biased run killed at iter 9157. Peak 36.37@5830. Restarting with velocity-balanced rewards (alive=0.25, stand_still=-2.0, track=2.0).",
+          "local_models": {
+            "checkpoint": "models/p/p3_coarse/p3_coarse_model_5800.pt",
+            "jit_policy": "models/p/p3_coarse/p3_coarse_policy_m5800.pt"
+          },
+          "video": "videos/p/p3_coarse/",
+          "video_files": []
+        },
+        {
+          "id": "p3_fine",
+          "run_dir": "2026-05-08_12-45-49_p3_fine",
+          "best_model": "model_10555.pt",
+          "best_iteration": 10555,
+          "best_reward": 36.02,
+          "peak_reward": 41.17,
+          "status": "OVERFITTING (reward declined 27.6%)",
+          "time_out": 89.1,
+          "bad_orientation": 10.8,
+          "vel_error": 0.43
+        }
+      ],
+      "phase_best": "p3_coarse/model_10500.pt",
+      "phase_best_reward": 37.38
+    },
+    {
+      "phase_id": "p3b",
+      "phase_name": "Intermediate Terrain",
+      "status": "DEPRECATED — 待移除",
+      "note": "p3_fine (gentle, reward 33.33) 优于 p3b (intermediate, reward 21-29)。p3b 为旧 pipeline 残留，计划移除。",
+      "sub_phases": [
+        {
+          "id": "p3b_coarse",
+          "run_dir": "2026-05-09_03-22-15_p3b_coarse",
+          "best_model": "model_10600.pt",
+          "best_iteration": 10600,
+          "best_reward": 29.08,
+          "peak_reward": 29.08,
+          "status": "OVERFITTING",
+          "time_out": 83.0,
+          "bad_orientation": 16.6,
+          "vel_error": 0.46,
+          "completed_at": "2026-05-09T06:03:00+08:00",
+          "local_models": {
+            "checkpoint": "models/p/p3b_coarse/p3b_coarse_model_10600.pt",
+            "jit_policy": "models/p/p3b_coarse/p3b_coarse_policy.pt"
+          },
+          "video": "videos/p/p3b_coarse/"
+        },
+        {
+          "id": "p3b_fine",
+          "run_dir": "2026-05-09_06-09-46_p3b_fine",
+          "best_model": "model_10800.pt",
+          "best_iteration": 10800,
+          "best_reward": null,
+          "peak_reward": null,
+          "status": "OVERFITTING",
+          "completed_at": "2026-05-09T09:44:00+08:00",
+          "local_models": {
+            "checkpoint": "models/p/p3b_fine/p3b_fine_model_10800.pt",
+            "jit_policy": "models/p/p3b_fine/p3b_fine_policy.pt"
+          },
+          "video": "videos/p/p3b_fine/",
+          "params": "videos/p/p3b_fine/params/"
+        }
+      ],
+      "phase_best": "p3b_fine/model_10800.pt",
+      "phase_best_reward": null
+    },
+    {
+      "phase_id": "p4",
+      "phase_name": "Rough Terrain",
+      "status": "IN_PROGRESS",
+      "sub_phases": [
+        {
+          "id": "p4_coarse",
+          "run_dir": null,
+          "status": "PENDING",
+          "starting_checkpoint": null,
+          "max_iterations": 25000,
+          "note": "New pipeline: p4 will start after p3_coarse completes"
+        }
+      ]
+    },
+    {
+      "phase_id": "p5",
+      "phase_name": "Full Terrain + Polish",
+      "status": "PENDING",
+      "sub_phases": []
+    }
+  ]
+}

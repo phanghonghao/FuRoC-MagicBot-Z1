@@ -42,3 +42,12 @@ remote_server_manual_extracted.txt
 
 # 履历
 履历/
+
+# 23DOF throwing experiments
+docs/23dof_throwing/
+
+# Presentation slides
+docs/presentation/
+
+# Training logs (local)
+logs/p/

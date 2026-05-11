@@ -703,9 +703,11 @@ def main():
 
             if step % 500 == 0:
                 state = env.get_robot_state()
+                vel_cmd_str = (f"cmd=({env.vel_cmd[0]:.1f}, {env.vel_cmd[1]:.1f}, {env.vel_cmd[2]:.1f})"
+                               if kb_controller else "")
                 print(f"  Step {step:5d} | t={state['time']:.1f}s | "
                       f"pos=({state['x']:.2f}, {state['y']:.2f}, {state['z']:.2f}) | "
-                      f"falls={fall_count}")
+                      f"{vel_cmd_str} | falls={fall_count}")
 
             if viewer and not args.record:
                 time.sleep(max(0, CONTROL_DT - 0.001))
