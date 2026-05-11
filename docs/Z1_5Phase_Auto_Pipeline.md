@@ -100,19 +100,24 @@ p5 (full terrain + polish)
 | base_height | -8.0 | -10.0 |
 | undesired_contacts | 0 | -1.5 |
 
-#### Stage 3 v2 (当前 — 降低地形难度，放松惩罚)
+#### Stage 3 v2 (当前 — 速度平衡：降低 alive，加 stand_still 惩罚)
+
+> 站立优先版 alive=0.5 + stand_still=0 导致 policy 学会"站着不动"，
+> MuJoCo 里完全走不动。改为速度平衡版：降低 alive，恢复 stand_still 惩罚。
+> Resume from model_5800.pt (peak reward 36.37 @iter 5830)。
 
 | 参数 | p3_coarse | p3_fine | 变更说明 |
 |------|-----------|---------|----------|
 | 地形 | 70% flat + 30% grid **[0,0.25]** | 70% flat + 30% grid **[0,0.35]** | ↓ 地形难度 |
 | LR | **3e-4** | **2e-4** | ↓ 更慢收敛 |
 | entropy | **0.015** | **0.012** | ↑ 更多探索 |
-| track_lin_vel | 1.5 | 2.0 | — |
-| alive | **0.5** | **0.3** | ↑ 增加存活奖励 |
-| flat_orientation | **-3.0** | **-5.0** | ↓ 放松姿态约束 |
-| base_height | **-5.0** | **-7.0** | ↓ 放松高度约束 |
+| track_lin_vel | **2.0** | 2.0 | ↑ 加强速度追踪 |
+| alive | **0.25** | **0.15** | ↓ 降低站立奖励 |
+| flat_orientation | **-4.0** | -5.0 | 稍收紧 |
+| base_height | **-6.0** | **-8.0** | 稍收紧 |
 | action_rate | -0.04 | -0.05 | — |
-| feet_clearance | **0.5** | **0.8** | ↓ 渐进引入 |
+| feet_clearance | **0.8** | **1.0** | ↑ 鼓励抬脚 |
+| stand_still | **-2.0** | **-3.5** | ↑ 惩罚不动 |
 | undesired_contacts | 0 | -1.5 | — |
 
 ### Phase 4: Rough Terrain (50K iter)

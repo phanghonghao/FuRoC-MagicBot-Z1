@@ -1,6 +1,6 @@
-# MagicBot Z1 12DOF — 5-Phase Automated Training Pipeline (p3 v2 fix)
+# MagicBot Z1 12DOF — 5-Phase Automated Training Pipeline
 # =====================================================
-# v2: p3 terrain transition fix — reduced difficulty, relaxed penalties
+# p3: standing-biased → velocity-balanced (reduce alive, add stand_still penalty)
 
 plan_name: z1_5phase
 num_gpus: 4
@@ -224,7 +224,7 @@ phases:
           min_iterations: 3000
 
   # ══════════════════════════════════════════════════════════════
-  # PHASE 3 — Gentle Terrain (v2: reduced difficulty, relaxed penalties)
+  # PHASE 3 — Gentle Terrain (velocity-balanced: lower alive, stand_still penalty)
   # ══════════════════════════════════════════════════════════════
   - id: p3
     name: "Gentle Terrain"
@@ -256,11 +256,11 @@ phases:
           learning_rate: 3.0e-4
           entropy_coef: 0.015
         rewards:
-          track_lin_vel_xy: 1.5
+          track_lin_vel_xy: 2.0
           track_ang_vel_z: 0.75
-          alive: 0.5
-          base_height: -5.0
-          flat_orientation_l2: -3.0
+          alive: 0.25
+          base_height: -6.0
+          flat_orientation_l2: -4.0
           action_rate_l1: -0.04
           base_linear_velocity: -2.0
           base_angular_velocity: -0.05
@@ -271,8 +271,8 @@ phases:
           joint_deviation_legs: -0.7
           feet_contact_number: 0.5
           feet_slide: 0.0
-          feet_clearance: 0.5
-          stand_still: 0.0
+          feet_clearance: 0.8
+          stand_still: -2.0
           undesired_contacts: 0.0
         monitor:
           action_rate_threshold: -1.0
@@ -297,8 +297,8 @@ phases:
         rewards:
           track_lin_vel_xy: 2.0
           track_ang_vel_z: 1.0
-          alive: 0.3
-          base_height: -7.0
+          alive: 0.15
+          base_height: -8.0
           flat_orientation_l2: -5.0
           action_rate_l1: -0.05
           base_linear_velocity: -2.0
@@ -310,7 +310,7 @@ phases:
           joint_deviation_legs: -0.7
           feet_contact_number: 0.5
           feet_slide: 0.0
-          feet_clearance: 0.8
+          feet_clearance: 1.0
           stand_still: -3.5
           undesired_contacts: -1.5
         monitor:
