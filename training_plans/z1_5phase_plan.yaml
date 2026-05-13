@@ -223,6 +223,53 @@ phases:
           action_rate_threshold: -0.8
           min_iterations: 3000
 
+  - id: p2b
+    name: "Flat — Joint Symmetry"
+    terrain: flat
+    env:
+      terrain_type: plane
+      terrain_generator: null
+    sub_phases:
+      - id: p2_fine_symmetry
+        name: "P2 Fine Symmetry"
+        max_iterations: 10000
+        env:
+          commands:
+            ranges:
+              lin_vel_x: [-0.5, 1.0]
+              lin_vel_y: [-0.5, 0.5]
+              ang_vel_z: [-0.5, 0.5]
+            limit_ranges:
+              lin_vel_x: [-0.5, 1.0]
+              lin_vel_y: [-0.5, 0.5]
+              ang_vel_z: [-0.5, 0.5]
+        ppo:
+          learning_rate: 3.0e-4
+          entropy_coef: 0.01
+        rewards:
+          track_lin_vel_xy: 2.0
+          track_ang_vel_z: 1.0
+          alive: 0.15
+          base_height: -10.0
+          flat_orientation_l2: -5.0
+          action_rate_l1: -0.05
+          base_linear_velocity: -2.0
+          base_angular_velocity: -0.05
+          joint_vel: -0.001
+          joint_acc: -2.5e-7
+          energy: -2e-5
+          dof_pos_limits: -5.0
+          joint_deviation_legs: -0.7
+          feet_contact_number: 0.5
+          feet_slide: 0.0
+          feet_clearance: 0.0
+          stand_still: -3.5
+          undesired_contacts: 0.0
+          joint_mirror: -0.5
+        monitor:
+          action_rate_threshold: -0.8
+          min_iterations: 3000
+
   # ══════════════════════════════════════════════════════════════
   # PHASE 3 — Gentle Terrain (velocity-balanced: lower alive, stand_still penalty)
   # ══════════════════════════════════════════════════════════════
@@ -313,6 +360,7 @@ phases:
           feet_clearance: 1.0
           stand_still: -3.5
           undesired_contacts: -1.5
+          joint_mirror: -0.3
         monitor:
           action_rate_threshold: -1.0
           min_iterations: 4000
@@ -428,6 +476,7 @@ phases:
           feet_clearance: 1.0
           stand_still: -3.5
           undesired_contacts: -2.0
+          joint_mirror: -0.3
         monitor:
           action_rate_threshold: -1.5
           min_iterations: 5000
@@ -522,6 +571,7 @@ phases:
           feet_clearance: 1.0
           stand_still: -3.5
           undesired_contacts: -2.0
+          joint_mirror: -0.3
         monitor:
           action_rate_threshold: -1.5
           min_iterations: 8000

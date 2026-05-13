@@ -613,7 +613,7 @@ def main():
             import datetime
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             phase_tag = args.phase or "test"
-            csv_path = f"logs/p/{phase_tag}/{phase_tag}_{timestamp}.csv"
+            csv_path = f"logs/p/{phase_tag}/{timestamp}/{phase_tag}.csv"
         else:
             csv_path = args.csv
         log_dir = os.path.dirname(csv_path)
