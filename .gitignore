@@ -51,3 +51,15 @@ docs/presentation/
 
 # Training logs (local)
 logs/p/
+
+# Videos (large binary files)
+videos/
+
+# Archived content
+**/_archived/
+
+# Unrelated projects (siblings that may be symlinked)
+magicbot-gen-1/
+magicbot-gen1_description/
+magic-bot-mimic/
+magicbot-mimic/

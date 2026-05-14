@@ -472,6 +472,7 @@ class MuJoCoDeploy:
         self.effort_limits = np.array([120, 120, 120, 120, 50, 50,
                                        120, 120, 120, 120, 50, 50], dtype=np.float64)
 
+        self._initial_vel_cmd = self.vel_cmd.copy()
         self.obs_buffer = ObservationBuffer()
         self.last_action = np.zeros(12)
         self.last_torques = np.zeros(12)
@@ -480,7 +481,7 @@ class MuJoCoDeploy:
 
     def reset(self):
         import mujoco
-        self.vel_cmd[:] = 0.0
+        self.vel_cmd[:] = self._initial_vel_cmd
         mujoco.mj_resetData(self.model, self.data)
         self.data.qpos[2] = 0.69
         self.data.qpos[3] = 1.0

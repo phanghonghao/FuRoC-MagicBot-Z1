@@ -1,7 +1,7 @@
 {
   "source": "5-phase-pipeline",
   "plan": "z1_5phase_plan.yaml",
-  "updated_at": "2026-05-11T12:00:00+08:00",
+  "updated_at": "2026-05-14T16:40:00+08:00",
   "phases": [
     {
       "phase_id": "p1",
@@ -15,7 +15,7 @@
           "best_iteration": 2900,
           "best_reward": 15.61,
           "peak_reward": 16.34,
-          "status": "OVERFITTING (entropy collapse 97.5%)",
+          "status": "COMPLETE",
           "completed_at": "2026-05-07T00:56:05+08:00",
           "local_models": {
             "checkpoint": "models/p/p1_coarse/p1_coarse_model_2900.pt",
@@ -30,7 +30,7 @@
           "best_iteration": 2800,
           "best_reward": 5.54,
           "peak_reward": 6.19,
-          "status": "OVERFITTING (reward declined 48.7%)",
+          "status": "COMPLETE",
           "completed_at": "2026-05-07T01:44:00+08:00",
           "local_models": {
             "checkpoint": "models/p/p1_fine/p1_fine_model_2800.pt",
@@ -45,8 +45,7 @@
     {
       "phase_id": "p2",
       "phase_name": "Flat — Velocity Tracking",
-      "status": "COMPLETE (via zombie data)",
-      "note": "p2 sub-phases completed using old zombie run data (not fresh pipeline training)",
+      "status": "COMPLETE",
       "sub_phases": [
         {
           "id": "p2_coarse",
@@ -55,7 +54,7 @@
           "best_iteration": 2917,
           "best_reward": 41.46,
           "peak_reward": 42.68,
-          "status": "OVERFITTING (reward declined 22.1%)",
+          "status": "COMPLETE",
           "local_models": {
             "checkpoint": "models/p/p2_coarse/p2_coarse_model_2900.pt",
             "jit_policy": "models/p/p2_coarse/p2_coarse_policy.pt"
@@ -69,7 +68,7 @@
           "best_iteration": 3168,
           "best_reward": 48.30,
           "peak_reward": 49.68,
-          "status": "OVERFITTING (reward declined 21.8%)",
+          "status": "COMPLETE",
           "local_models": {
             "checkpoint": "models/p/p2_fine/p2_fine_model_3200.pt",
             "jit_policy": "models/p/p2_fine/p2_fine_policy.pt"
@@ -87,82 +86,44 @@
       "sub_phases": [
         {
           "id": "p3_coarse",
-          "run_dir": "2026-05-10_19-16-47_p3_coarse",
+          "run_dir": "2026-05-12_11-12-52_p3_coarse",
           "best_model": "model_5800.pt",
           "best_iteration": 5800,
           "best_reward": 36.37,
           "peak_reward": 36.37,
-          "status": "PAUSED (reward rebalance, resuming from model_5800)",
+          "status": "COMPLETE",
           "time_out": 85.8,
           "bad_orientation": 14.2,
           "vel_error": 0.39,
-          "note": "Standing-biased run killed at iter 9157. Peak 36.37@5830. Restarting with velocity-balanced rewards (alive=0.25, stand_still=-2.0, track=2.0).",
           "local_models": {
             "checkpoint": "models/p/p3_coarse/p3_coarse_model_5800.pt",
             "jit_policy": "models/p/p3_coarse/p3_coarse_policy_m5800.pt"
           },
-          "video": "videos/p/p3_coarse/",
-          "video_files": []
+          "video": "videos/p/p3_coarse/20260514_1630/",
+          "video_files": ["p3_coarse_model5800_isaaclab.mp4", "p3_coarse_model5800_mujoco.mp4"]
         },
         {
           "id": "p3_fine",
-          "run_dir": "2026-05-08_12-45-49_p3_fine",
-          "best_model": "model_10555.pt",
-          "best_iteration": 10555,
-          "best_reward": 36.02,
-          "peak_reward": 41.17,
-          "status": "OVERFITTING (reward declined 27.6%)",
-          "time_out": 89.1,
-          "bad_orientation": 10.8,
-          "vel_error": 0.43
+          "run_dir": "2026-05-13_04-42-53_p3_fine",
+          "best_model": "model_5300.pt",
+          "best_iteration": 5300,
+          "best_reward": 30.57,
+          "peak_reward": 31.20,
+          "status": "COMPLETE",
+          "time_out": 83.6,
+          "bad_orientation": 16.4,
+          "vel_error": 0.39,
+          "completed_at": "2026-05-13T07:00:29+08:00",
+          "local_models": {
+            "checkpoint": "models/p/p3_fine/p3_fine_model_5300.pt",
+            "jit_policy": "models/p/p3_fine/p3_fine_policy.pt"
+          },
+          "video": "videos/p/p3_fine/20260514_1514/",
+          "video_files": ["p3_fine_model5300_isaaclab.mp4", "p3_fine_model5300_mujoco.mp4"]
         }
       ],
-      "phase_best": "p3_coarse/model_10500.pt",
-      "phase_best_reward": 37.38
-    },
-    {
-      "phase_id": "p3b",
-      "phase_name": "Intermediate Terrain",
-      "status": "DEPRECATED — 待移除",
-      "note": "p3_fine (gentle, reward 33.33) 优于 p3b (intermediate, reward 21-29)。p3b 为旧 pipeline 残留，计划移除。",
-      "sub_phases": [
-        {
-          "id": "p3b_coarse",
-          "run_dir": "2026-05-09_03-22-15_p3b_coarse",
-          "best_model": "model_10600.pt",
-          "best_iteration": 10600,
-          "best_reward": 29.08,
-          "peak_reward": 29.08,
-          "status": "OVERFITTING",
-          "time_out": 83.0,
-          "bad_orientation": 16.6,
-          "vel_error": 0.46,
-          "completed_at": "2026-05-09T06:03:00+08:00",
-          "local_models": {
-            "checkpoint": "models/p/p3b_coarse/p3b_coarse_model_10600.pt",
-            "jit_policy": "models/p/p3b_coarse/p3b_coarse_policy.pt"
-          },
-          "video": "videos/p/p3b_coarse/"
-        },
-        {
-          "id": "p3b_fine",
-          "run_dir": "2026-05-09_06-09-46_p3b_fine",
-          "best_model": "model_10800.pt",
-          "best_iteration": 10800,
-          "best_reward": null,
-          "peak_reward": null,
-          "status": "OVERFITTING",
-          "completed_at": "2026-05-09T09:44:00+08:00",
-          "local_models": {
-            "checkpoint": "models/p/p3b_fine/p3b_fine_model_10800.pt",
-            "jit_policy": "models/p/p3b_fine/p3b_fine_policy.pt"
-          },
-          "video": "videos/p/p3b_fine/",
-          "params": "videos/p/p3b_fine/params/"
-        }
-      ],
-      "phase_best": "p3b_fine/model_10800.pt",
-      "phase_best_reward": null
+      "phase_best": "p3_coarse/model_5800.pt",
+      "phase_best_reward": 36.37
     },
     {
       "phase_id": "p4",
@@ -171,11 +132,25 @@
       "sub_phases": [
         {
           "id": "p4_coarse",
-          "run_dir": null,
-          "status": "PENDING",
-          "starting_checkpoint": null,
-          "max_iterations": 25000,
-          "note": "New pipeline: p4 will start after p3_coarse completes"
+          "run_dir": "2026-05-13_19-46-02_p4_coarse",
+          "best_model": null,
+          "best_iteration": null,
+          "best_reward": null,
+          "status": "STOPPED (needs monitor to determine best)",
+          "local_models": null,
+          "video": null,
+          "note": "Models 10100→18200 on RTX. No overfitting marker. Started from p3b/p3 lineage at iter ~10100."
+        },
+        {
+          "id": "p4_fine",
+          "run_dir": "2026-05-14_03-50-16_p4_fine",
+          "best_model": null,
+          "best_iteration": null,
+          "best_reward": null,
+          "status": "STOPPED (was at iter ~21300/41300)",
+          "local_models": null,
+          "video": null,
+          "note": "Models 16300→21300 on RTX. Resumed from p4_coarse. Stopped for p3_fine video recording. Needs --orchestrator --resume to continue."
         }
       ]
     },
@@ -184,6 +159,59 @@
       "phase_name": "Full Terrain + Polish",
       "status": "PENDING",
       "sub_phases": []
+    }
+  ],
+  "archived_runs": [
+    {
+      "id": "p3b",
+      "phase_name": "Intermediate Terrain",
+      "status": "DEPRECATED — 不再使用，p3 gentle 足够",
+      "note": "p3b 为旧 pipeline 残留。p3_fine (gentle, reward 30.57) 优于 p3b (intermediate, reward ~25)。5-phase pipeline 已跳过 p3b。",
+      "runs": [
+        {"run_dir": "2026-05-09_03-22-15_p3b_coarse", "best_reward": 29.08, "note": "旧 pipeline"},
+        {"run_dir": "2026-05-09_06-09-46_p3b_fine", "best_reward": null, "note": "旧 pipeline"},
+        {"run_dir": "2026-05-12_00-39-49_p3b_fine_symmetry", "note": "symmetry 实验"},
+        {"run_dir": "2026-05-13_07-05-31_p3b_coarse", "note": "pipeline 重试"},
+        {"run_dir": "2026-05-13_11-38-16_p3b_fine", "note": "pipeline 重试"},
+        {"run_dir": "2026-05-13_14-08-38_p3b_fine_symmetry", "note": "symmetry 实验"}
+      ]
+    },
+    {
+      "id": "p3_coarse_old",
+      "status": "不再使用，已被 2026-05-12_11-12-52_p3_coarse 替代",
+      "runs": [
+        {"run_dir": "2026-05-11_04-42-27_p3_coarse", "models": "5800→9900", "note": "第一版 p3_coarse, standing-biased"}
+      ]
+    },
+    {
+      "id": "p3_fine_old",
+      "status": "不再使用，已被 2026-05-13_04-42-53_p3_fine 替代",
+      "runs": [
+        {"run_dir": "2026-05-12_14-57-51_p3_fine", "models": "3300→6700", "note": "第一版 p3_fine"}
+      ]
+    },
+    {
+      "id": "p4_coarse_old",
+      "status": "不再使用，已被 2026-05-13_19-46-02_p4_coarse 替代",
+      "runs": [
+        {"run_dir": "2026-05-12_02-29-51_p4_coarse", "models": "10600→15600", "note": "第一版 p4_coarse"}
+      ]
+    },
+    {
+      "id": "p4_fine_old",
+      "status": "不再使用，已被 2026-05-14_03-50-16_p4_fine 替代",
+      "runs": [
+        {"run_dir": "2026-05-12_06-46-02_p4_fine", "note": "旧版 p4_fine"},
+        {"run_dir": "2026-05-14_00-45-48_p4_fine", "models": "16300→21300", "note": "p4_fine 第二版"}
+      ]
+    },
+    {
+      "id": "p2_fine_symmetry",
+      "status": "不再使用，实验性",
+      "runs": [
+        {"run_dir": "2026-05-12_08-20-23_p2_fine_symmetry", "note": "仅 model_0"},
+        {"run_dir": "2026-05-12_08-25-03_p2_fine_symmetry", "models": "3100→6100"}
+      ]
     }
   ]
 }
