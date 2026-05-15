@@ -219,6 +219,7 @@ phases:
           feet_clearance: 0.0
           stand_still: -3.5
           undesired_contacts: 0.0
+          joint_mirror: -0.5
         monitor:
           action_rate_threshold: -0.8
           min_iterations: 3000

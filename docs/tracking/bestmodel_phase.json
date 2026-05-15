@@ -1,7 +1,7 @@
 {
   "source": "5-phase-pipeline",
   "plan": "z1_5phase_plan.yaml",
-  "updated_at": "2026-05-14T16:40:00+08:00",
+  "updated_at": "2026-05-15T17:00:00+08:00",
   "phases": [
     {
       "phase_id": "p1",
@@ -45,7 +45,7 @@
     {
       "phase_id": "p2",
       "phase_name": "Flat — Velocity Tracking",
-      "status": "COMPLETE",
+      "status": "IN_PROGRESS",
       "sub_phases": [
         {
           "id": "p2_coarse",
@@ -63,105 +63,125 @@
         },
         {
           "id": "p2_fine",
-          "run_dir": "2026-05-06_19-33-51_p2_fine",
-          "best_model": "model_3168.pt",
-          "best_iteration": 3168,
-          "best_reward": 48.30,
-          "peak_reward": 49.68,
-          "status": "COMPLETE",
-          "local_models": {
-            "checkpoint": "models/p/p2_fine/p2_fine_model_3200.pt",
-            "jit_policy": "models/p/p2_fine/p2_fine_policy.pt"
-          },
-          "video": "videos/p/p2_fine/"
+          "run_dir": "2026-05-15_07-07-19_p2_fine",
+          "best_model": null,
+          "best_iteration": null,
+          "best_reward": null,
+          "peak_reward": null,
+          "status": "TRAINING",
+          "local_models": null,
+          "video": null,
+          "note": "Rollback retraining with joint_mirror reward. Previous best was 48.30 (model_3168)."
         }
       ],
-      "phase_best": "p2_fine/model_3168.pt",
-      "phase_best_reward": 48.30
+      "phase_best": null,
+      "phase_best_reward": null
     },
     {
       "phase_id": "p3",
       "phase_name": "Gentle Terrain",
-      "status": "COMPLETE",
-      "sub_phases": [
-        {
-          "id": "p3_coarse",
-          "run_dir": "2026-05-12_11-12-52_p3_coarse",
-          "best_model": "model_5800.pt",
-          "best_iteration": 5800,
-          "best_reward": 36.37,
-          "peak_reward": 36.37,
-          "status": "COMPLETE",
-          "time_out": 85.8,
-          "bad_orientation": 14.2,
-          "vel_error": 0.39,
-          "local_models": {
-            "checkpoint": "models/p/p3_coarse/p3_coarse_model_5800.pt",
-            "jit_policy": "models/p/p3_coarse/p3_coarse_policy_m5800.pt"
-          },
-          "video": "videos/p/p3_coarse/20260514_1630/",
-          "video_files": ["p3_coarse_model5800_isaaclab.mp4", "p3_coarse_model5800_mujoco.mp4"]
-        },
-        {
-          "id": "p3_fine",
-          "run_dir": "2026-05-13_04-42-53_p3_fine",
-          "best_model": "model_5300.pt",
-          "best_iteration": 5300,
-          "best_reward": 30.57,
-          "peak_reward": 31.20,
-          "status": "COMPLETE",
-          "time_out": 83.6,
-          "bad_orientation": 16.4,
-          "vel_error": 0.39,
-          "completed_at": "2026-05-13T07:00:29+08:00",
-          "local_models": {
-            "checkpoint": "models/p/p3_fine/p3_fine_model_5300.pt",
-            "jit_policy": "models/p/p3_fine/p3_fine_policy.pt"
-          },
-          "video": "videos/p/p3_fine/20260514_1514/",
-          "video_files": ["p3_fine_model5300_isaaclab.mp4", "p3_fine_model5300_mujoco.mp4"]
-        }
-      ],
-      "phase_best": "p3_coarse/model_5800.pt",
-      "phase_best_reward": 36.37
+      "status": "ARCHIVED",
+      "archived_reason": "Rollback: p2_fine retrained with joint_mirror reward, invalidating downstream phases",
+      "sub_phases": []
     },
     {
       "phase_id": "p4",
       "phase_name": "Rough Terrain",
-      "status": "IN_PROGRESS",
-      "sub_phases": [
-        {
-          "id": "p4_coarse",
-          "run_dir": "2026-05-13_19-46-02_p4_coarse",
-          "best_model": null,
-          "best_iteration": null,
-          "best_reward": null,
-          "status": "STOPPED (needs monitor to determine best)",
-          "local_models": null,
-          "video": null,
-          "note": "Models 10100→18200 on RTX. No overfitting marker. Started from p3b/p3 lineage at iter ~10100."
-        },
-        {
-          "id": "p4_fine",
-          "run_dir": "2026-05-14_03-50-16_p4_fine",
-          "best_model": null,
-          "best_iteration": null,
-          "best_reward": null,
-          "status": "STOPPED (was at iter ~21300/41300)",
-          "local_models": null,
-          "video": null,
-          "note": "Models 16300→21300 on RTX. Resumed from p4_coarse. Stopped for p3_fine video recording. Needs --orchestrator --resume to continue."
-        }
-      ]
+      "status": "ARCHIVED",
+      "archived_reason": "Rollback: p2_fine retrained with joint_mirror reward, invalidating downstream phases",
+      "sub_phases": []
     },
     {
       "phase_id": "p5",
       "phase_name": "Full Terrain + Polish",
-      "status": "PENDING",
+      "status": "ARCHIVED",
+      "archived_reason": "Rollback: p2_fine retrained with joint_mirror reward, invalidating downstream phases",
       "sub_phases": []
     }
   ],
   "archived_runs": [
+    {
+      "id": "p3_coarse",
+      "archived_reason": "Rollback: p2_fine retrained with joint_mirror reward",
+      "original_status": "COMPLETE",
+      "run_dir": "2026-05-12_11-12-52_p3_coarse",
+      "best_model": "model_5800.pt",
+      "best_iteration": 5800,
+      "best_reward": 36.37,
+      "peak_reward": 36.37,
+      "time_out": 85.8,
+      "bad_orientation": 14.2,
+      "vel_error": 0.39,
+      "local_models": {
+        "checkpoint": "models/p/p3_coarse/p3_coarse_model_5800.pt",
+        "jit_policy": "models/p/p3_coarse/p3_coarse_policy_m5800.pt"
+      },
+      "video": "videos/p/p3_coarse/20260514_1630/",
+      "video_files": ["p3_coarse_model5800_isaaclab.mp4", "p3_coarse_model5800_mujoco.mp4"]
+    },
+    {
+      "id": "p3_fine",
+      "archived_reason": "Rollback: p2_fine retrained with joint_mirror reward",
+      "original_status": "COMPLETE",
+      "run_dir": "2026-05-13_04-42-53_p3_fine",
+      "best_model": "model_5300.pt",
+      "best_iteration": 5300,
+      "best_reward": 30.57,
+      "peak_reward": 31.20,
+      "time_out": 83.6,
+      "bad_orientation": 16.4,
+      "vel_error": 0.39,
+      "completed_at": "2026-05-13T07:00:29+08:00",
+      "local_models": {
+        "checkpoint": "models/p/p3_fine/p3_fine_model_5300.pt",
+        "jit_policy": "models/p/p3_fine/p3_fine_policy.pt"
+      },
+      "video": "videos/p/p3_fine/20260514_1514/",
+      "video_files": ["p3_fine_model5300_isaaclab.mp4", "p3_fine_model5300_mujoco.mp4"]
+    },
+    {
+      "id": "p4_coarse",
+      "archived_reason": "Rollback: p2_fine retrained with joint_mirror reward",
+      "original_status": "STOPPED",
+      "run_dir": "2026-05-13_19-46-02_p4_coarse",
+      "best_model": null,
+      "best_iteration": null,
+      "best_reward": null,
+      "local_models": null,
+      "video": null,
+      "note": "Models 10100→18200 on RTX. No overfitting marker. Started from p3b/p3 lineage at iter ~10100."
+    },
+    {
+      "id": "p4_fine",
+      "archived_reason": "Rollback: p2_fine retrained with joint_mirror reward",
+      "original_status": "STOPPED",
+      "run_dir": "2026-05-14_03-50-16_p4_fine",
+      "best_model": "model_16400.pt",
+      "best_iteration": 16400,
+      "best_reward": 1.26,
+      "peak_reward": 1.26,
+      "local_models": {
+        "checkpoint": "models/p/p4_fine/p4_fine_model_16400.pt",
+        "jit_policy": "models/p/p4_fine/p4_fine_policy.pt"
+      },
+      "video": "videos/p/p4_fine/",
+      "note": "Best of 9 p4_fine runs (all peaked at reward 1.26@step 16411)."
+    },
+    {
+      "id": "p2_fine_old",
+      "archived_reason": "Rollback: replaced by new p2_fine training with joint_mirror reward",
+      "original_status": "COMPLETE",
+      "run_dir": "2026-05-06_19-33-51_p2_fine",
+      "best_model": "model_3168.pt",
+      "best_iteration": 3168,
+      "best_reward": 48.30,
+      "peak_reward": 49.68,
+      "local_models": {
+        "checkpoint": "models/p/p2_fine/p2_fine_model_3200.pt",
+        "jit_policy": "models/p/p2_fine/p2_fine_policy.pt"
+      },
+      "video": "videos/p/p2_fine/"
+    },
     {
       "id": "p3b",
       "phase_name": "Intermediate Terrain",
