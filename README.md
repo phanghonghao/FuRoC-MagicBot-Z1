@@ -8,7 +8,7 @@ RL locomotion training pipeline for **MagicBot Z1 12DOF bipedal robot**, built o
   <img src="docs/github_readme/pipeline_flow.svg" alt="5-Phase Curriculum Learning Pipeline" width="95%">
 </p>
 
-> **5-phase curriculum learning** with terrain progression: Flat → Gentle → Rough → Full. Each phase resumes from the best checkpoint of the previous phase. Currently retraining from P2 Fine with joint_mirror symmetry reward to fix left-right asymmetry before advancing to terrain phases.
+> **5-phase curriculum learning** with terrain progression: Flat → Gentle → Rough → Full. Each phase resumes from the best checkpoint of the previous phase. Currently retraining from P2 Coarse with statistical joint_mirror symmetry reward (EMA running mean/var comparison + per-joint ankle-heavy weights) to fix left-right asymmetry before advancing to terrain phases.
 
 ## Demo
 
@@ -46,7 +46,7 @@ RL locomotion training pipeline for **MagicBot Z1 12DOF bipedal robot**, built o
 >
 > **Root cause**: The reward function only penalizes each joint's deviation from its default position (`joint_deviation_l1`), but never enforces left-right correspondence. On flat terrain (P2) the optimal gait happens to be symmetric, but random terrain (P3) exposes this gap — PPO freely converges to an asymmetric local optimum where left and right legs use fundamentally different joint angles, yet still scores high reward.
 >
-> **Fix**: Add a symmetry reward term `|qpos_left - qpos_right|` or enable Isaac Lab's built-in `RslRlSymmetryCfg(use_mirror_loss=True)`. Can resume from current P3b Fine checkpoint without retraining from scratch.
+> **Fix**: Statistical `joint_mirror` reward using EMA running mean/variance comparison (not naive same-timestep subtraction, which is invalid during anti-phase gait). Per-joint weights prioritize ankle_pitch (3x) and knee_pitch (1.5x) — the joints with worst asymmetry. Integrated into P2+ training pipeline.
 
 ## Pre-trained Models
 
@@ -55,7 +55,7 @@ RL locomotion training pipeline for **MagicBot Z1 12DOF bipedal robot**, built o
 | P1 Coarse | Standing | `models/p/p1_coarse/p1_coarse_policy.pt` | Bootstraps standing from random init |
 | P1 Fine | Standing | `models/p/p1_fine/p1_fine_policy.pt` | Fine-tuned stable standing on flat terrain |
 | P2 Coarse | Locomotion | `models/p/p2_coarse/p2_coarse_policy.pt` | Initial velocity tracking on flat terrain |
-| P2 Fine | *Retraining* | — | Retraining with joint_mirror symmetry reward |
+| P2 Fine | *Retraining* | — | Retraining with statistical joint_mirror (EMA + per-joint weights) |
 
 ## 5-Phase Automated Pipeline
 
@@ -64,7 +64,7 @@ Fully automated training pipeline with overfitting detection, auto-rollback, and
 | Phase | Terrain | Key Goal | Sub-phases | Status |
 |-------|---------|----------|------------|--------|
 | P1 | Flat | Bootstrap standing | coarse → fine | Done ✅ |
-| P2 | Flat | Velocity tracking | coarse → fine | Retraining 🔄 (joint_mirror) |
+| P2 | Flat | Velocity tracking + symmetry | coarse → fine | Retraining 🔄 (statistical joint_mirror) |
 | P3 | 70% flat + 30% gentle grid | Light terrain walking | coarse → fine | Planned ⏳ |
 | P4 | Flat + grid + stairs + gap + boxes | Rough terrain | coarse → fine | Planned ⏳ |
 | P5 | Full terrain + rails | Complex + high speed | coarse → fine | Planned ⏳ |
