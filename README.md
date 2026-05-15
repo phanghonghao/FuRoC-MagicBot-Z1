@@ -8,7 +8,7 @@ RL locomotion training pipeline for **MagicBot Z1 12DOF bipedal robot**, built o
   <img src="docs/github_readme/pipeline_flow.svg" alt="5-Phase Curriculum Learning Pipeline" width="95%">
 </p>
 
-> **5-phase curriculum learning** with terrain progression: Flat → Gentle → Intermediate → Rough → Full. Each phase resumes from the best checkpoint of the previous phase.
+> **5-phase curriculum learning** with terrain progression: Flat → Gentle → Rough → Full. Each phase resumes from the best checkpoint of the previous phase. Currently retraining from P2 Fine with joint_mirror symmetry reward to fix left-right asymmetry before advancing to terrain phases.
 
 ## Demo
 
@@ -20,24 +20,6 @@ RL locomotion training pipeline for **MagicBot Z1 12DOF bipedal robot**, built o
 
 > P1 Coarse → P1 Fine → P2 Coarse → P2 Fine. Left column: Isaac Lab simulation. Right column: MuJoCo sim2sim validation.
 
-### P3 Gentle Terrain Walking
-
-<p align="center">
-  <img src="docs/github_readme/p3_demo.gif" alt="P3 Fine Isaac Lab Demo" width="45%">
-  &nbsp;
-  <img src="docs/github_readme/p3_sim2sim_mujoco.gif" alt="P3 Fine MuJoCo Sim2Sim" width="45%">
-</p>
-
-> **Left**: P3 Fine policy in Isaac Lab (gentle terrain). **Right**: Sim2sim transfer to MuJoCo — robot walks on flat ground in a different simulator.
-
-### P3b Intermediate Terrain
-
-<p align="center">
-  <img src="docs/github_readme/p3b_demo.gif" alt="P3b Fine MuJoCo Sim2Sim" width="45%">
-</p>
-
-> P3b Fine policy deployed to MuJoCo. Trained on mixed terrain (flat + grid + stairs + boxes), successfully transfers to flat-ground sim2sim.
-
 ## Results
 
 ### Curriculum Reward Trends
@@ -47,36 +29,6 @@ RL locomotion training pipeline for **MagicBot Z1 12DOF bipedal robot**, built o
 </p>
 
 > Reward curves across sub-phases. P1 (flat terrain, bootstrap → standing), P2 (flat, velocity tracking). Each phase resumes from the best checkpoint of the previous phase.
-
-### P2 Fine Reward Decomposition
-
-<p align="center">
-  <img src="docs/github_readme/reward_trend_p2_fine.png" alt="P2 Fine Reward Trend" width="45%">
-  &nbsp;
-  <img src="docs/github_readme/reward_decomposition_p2_fine.png" alt="P2 Fine Reward Decomposition" width="45%">
-</p>
-
-> **Left**: P2 Fine total reward trend. **Right**: Individual reward component decomposition — velocity tracking, orientation, base height, foot contact, action rate penalty, and torque penalty.
-
-### P3 Fine Results
-
-<p align="center">
-  <img src="docs/github_readme/reward_trend_p3_fine.png" alt="P3 Fine Reward Trend" width="45%">
-  &nbsp;
-  <img src="docs/github_readme/reward_decomposition_p3_fine.png" alt="P3 Fine Reward Decomposition" width="45%">
-</p>
-
-> **Left**: P3 Fine total reward trend (gentle terrain). **Right**: Reward decomposition showing terrain adaptation components.
-
-### P3b Fine Results
-
-<p align="center">
-  <img src="docs/github_readme/reward_trend_p3b_fine.png" alt="P3b Fine Reward Trend" width="45%">
-  &nbsp;
-  <img src="docs/github_readme/reward_decomposition_p3b_fine.png" alt="P3b Fine Reward Decomposition" width="45%">
-</p>
-
-> **Left**: P3b Fine total reward trend (intermediate terrain). **Right**: Reward decomposition with stairs/boxes adaptation.
 
 ### Left-Right Joint Asymmetry
 
@@ -96,14 +48,6 @@ RL locomotion training pipeline for **MagicBot Z1 12DOF bipedal robot**, built o
 >
 > **Fix**: Add a symmetry reward term `|qpos_left - qpos_right|` or enable Isaac Lab's built-in `RslRlSymmetryCfg(use_mirror_loss=True)`. Can resume from current P3b Fine checkpoint without retraining from scratch.
 
-### Sim2Sim Gap: P3 Fine on Flat MuJoCo
-
-<p align="center">
-  <img src="docs/github_readme/p3_fine_sim2sim_broken.gif" alt="P3 Fine sim2sim broken in MuJoCo" width="45%">
-</p>
-
-> **P3 Fine policy (gentle terrain training) deployed to MuJoCo** — the robot repeatedly falls. Policies trained on rough terrain initially struggle on flat ground in a different simulator due to sim2sim physics gap. This motivated the P3b phase to bridge the gap.
-
 ## Pre-trained Models
 
 | Phase | Policy | Path | Description |
@@ -111,11 +55,7 @@ RL locomotion training pipeline for **MagicBot Z1 12DOF bipedal robot**, built o
 | P1 Coarse | Standing | `models/p/p1_coarse/p1_coarse_policy.pt` | Bootstraps standing from random init |
 | P1 Fine | Standing | `models/p/p1_fine/p1_fine_policy.pt` | Fine-tuned stable standing on flat terrain |
 | P2 Coarse | Locomotion | `models/p/p2_coarse/p2_coarse_policy.pt` | Initial velocity tracking on flat terrain |
-| P2 Fine | Locomotion | `models/p/p2_fine/p2_fine_policy.pt` | Fine-tuned velocity tracking with gait shaping |
-| P3 Coarse | Terrain Walk | `models/p/p3_coarse/p3_coarse_policy.pt` | Gentle terrain walking (70% flat + 30% grid) |
-| P3 Fine | Terrain Walk | `models/p/p3_fine/p3_fine_policy.pt` | Fine-tuned gentle terrain walking |
-| P3b Coarse | Terrain Mix | `models/p/p3b_coarse/p3b_coarse_policy.pt` | Intermediate terrain (50% flat + 30% grid + 10% stairs + 10% boxes) |
-| P3b Fine | Terrain Mix | `models/p/p3b_fine/p3b_fine_policy.pt` | Fine-tuned intermediate terrain walking |
+| P2 Fine | *Retraining* | — | Retraining with joint_mirror symmetry reward |
 
 ## 5-Phase Automated Pipeline
 
@@ -124,10 +64,9 @@ Fully automated training pipeline with overfitting detection, auto-rollback, and
 | Phase | Terrain | Key Goal | Sub-phases | Status |
 |-------|---------|----------|------------|--------|
 | P1 | Flat | Bootstrap standing | coarse → fine | Done ✅ |
-| P2 | Flat | Velocity tracking | coarse → fine | Done ✅ |
-| P3 | 70% flat + 30% gentle grid | Light terrain walking | coarse → fine | Done ✅ |
-| P3b | 50% flat + 30% grid + 10% stairs + 10% boxes | Intermediate terrain | coarse → fine | Done ✅ |
-| P4 | Flat + grid + stairs + gap + boxes | Rough terrain | coarse → fine | In progress 🔄 |
+| P2 | Flat | Velocity tracking | coarse → fine | Retraining 🔄 (joint_mirror) |
+| P3 | 70% flat + 30% gentle grid | Light terrain walking | coarse → fine | Planned ⏳ |
+| P4 | Flat + grid + stairs + gap + boxes | Rough terrain | coarse → fine | Planned ⏳ |
 | P5 | Full terrain + rails | Complex + high speed | coarse → fine | Planned ⏳ |
 
 Each sub-phase: config generation → distributed PPO training → overfitting detection → video recording → advance. Orchestrator auto-detects 5 failure signals (reward decline, policy collapse, action explosion, entropy collapse, value divergence) and rolls back if needed.
@@ -146,8 +85,6 @@ Magicbot_Z1/
 │   └── p/                    # Pipeline policy checkpoints (Git LFS)
 │       ├── p1_coarse/  p1_fine/
 │       ├── p2_coarse/  p2_fine/
-│       ├── p3_coarse/  p3_fine/
-│       ├── p3b_coarse/ p3b_fine/
 ├── videos/                   # Training demo videos (Git LFS)
 ├── IsaacLab/                 # Isaac Lab framework (.gitignored)
 └── README.md
