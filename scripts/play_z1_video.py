@@ -140,6 +140,70 @@ def _override_velocity_config(env_cfg):
         print(f"[INFO] Velocity override: x={vel_x}, y={vel_y}, yaw={vel_yaw}", flush=True)
 
 
+def _extract_command_row(command):
+    """Convert a command tensor/array into env-0 velocity floats."""
+    if command is None:
+        return None, None, None
+
+    try:
+        if hasattr(command, "detach"):
+            command = command.detach()
+        if hasattr(command, "cpu"):
+            command = command.cpu()
+        command = np.asarray(command)
+        row = command[0] if command.ndim > 1 else command
+        if row.shape[0] < 3:
+            return None, None, None
+        return float(row[0]), float(row[1]), float(row[2])
+    except Exception:
+        return None, None, None
+
+
+def _get_vel_commands(env):
+    """Read current base velocity command from env-0."""
+    unwrapped = env.unwrapped if hasattr(env, "unwrapped") else env
+    command_manager = getattr(unwrapped, "command_manager", None)
+    if command_manager is None:
+        return None, None, None
+
+    try:
+        return _extract_command_row(command_manager.get_command("base_velocity"))
+    except Exception:
+        return _extract_command_row(getattr(command_manager, "command", None))
+
+
+def _save_vel_log(vel_log, log_dir):
+    """Persist per-frame velocity commands next to the recorded video."""
+    import json
+
+    if not vel_log or not log_dir:
+        return
+
+    video_folder = os.path.join(log_dir, "videos", "play")
+    os.makedirs(video_folder, exist_ok=True)
+    data = {
+        "type": "isaac_lab",
+        "fps": 50,
+        "num_frames": len(vel_log),
+        "vel_x": [cmd[0] for cmd in vel_log],
+        "vel_y": [cmd[1] for cmd in vel_log],
+        "vel_yaw": [cmd[2] for cmd in vel_log],
+    }
+    for name in ("sweep.json", "vel_commands.json"):
+        out_path = os.path.join(video_folder, name)
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    print(f"[INFO] Velocity log saved: {os.path.join(video_folder, 'sweep.json')}", flush=True)
+
+
+def _maybe_flush_vel_log(vel_log, log_dir, step):
+    """Flush velocity log periodically so data survives forced shutdowns."""
+    if vel_log is None or step <= 0:
+        return
+    if step % 50 == 0:
+        _save_vel_log(vel_log, log_dir)
+
+
 def main():
     try:
         # === Env config (play mode) ===
@@ -244,6 +308,7 @@ def _run_jit(env, cam_ctx, cam_dist, cam_height, log_dir):
             "step_trigger": lambda step: step == 0,
             "video_length": args_cli.video_length,
             "disable_logger": True,
+            "fps": 50,
         }
         print(f"[INFO] Recording video to: {video_folder}", flush=True)
         env = gym.wrappers.RecordVideo(env, **video_kwargs)
@@ -258,6 +323,7 @@ def _run_jit(env, cam_ctx, cam_dist, cam_height, log_dir):
     timestep = 0
     fall_count = 0
     start_time = time.time()
+    vel_log = [] if args_cli.video else None
 
     print(f"[INFO] Running rollout ({max_steps} steps, JIT mode)...", flush=True)
 
@@ -275,6 +341,10 @@ def _run_jit(env, cam_ctx, cam_dist, cam_height, log_dir):
 
             obs, reward, terminated, truncated, info = env.step(actions)
 
+        if vel_log is not None:
+            vel_log.append(_get_vel_commands(env))
+            _maybe_flush_vel_log(vel_log, log_dir, timestep + 1)
+
         # Count falls: terminated due to bad_orientation or base_height (not time_out)
         fall_count += terminated.sum().item()
         timestep += 1
@@ -287,6 +357,7 @@ def _run_jit(env, cam_ctx, cam_dist, cam_height, log_dir):
         print(f"[INFO] FPS: {timestep / elapsed:.0f}", flush=True)
     print(f"[INFO] Falls: {fall_count}/{timestep} steps", flush=True)
 
+    _save_vel_log(vel_log, log_dir)
     env.close()
     print("[INFO] Environment closed. Video saved.", flush=True)
 
@@ -328,6 +399,7 @@ def _run_onpolicy(env, cam_ctx, cam_dist, cam_height, log_dir):
             "step_trigger": lambda step: step == 0,
             "video_length": args_cli.video_length,
             "disable_logger": True,
+            "fps": 50,
         }
         print(f"[INFO] Recording video to: {video_kwargs['video_folder']}", flush=True)
         env = gym.wrappers.RecordVideo(env, **video_kwargs)
@@ -352,6 +424,7 @@ def _run_onpolicy(env, cam_ctx, cam_dist, cam_height, log_dir):
     timestep = 0
     fall_count = 0
     max_steps = args_cli.video_length if args_cli.video else args_cli.max_steps
+    vel_log = [] if args_cli.video else None
 
     start_time = time.time()
     print(f"[INFO] Running rollout (max {max_steps} steps, OnPolicyRunner mode)...", flush=True)
@@ -369,6 +442,10 @@ def _run_onpolicy(env, cam_ctx, cam_dist, cam_height, log_dir):
 
             obs, rewards, dones, info = env_wrapped.step(actions)
 
+        if vel_log is not None:
+            vel_log.append(_get_vel_commands(env))
+            _maybe_flush_vel_log(vel_log, log_dir, timestep + 1)
+
         # Count falls: dones that are NOT time_outs
         time_outs = info.get("time_outs", torch.zeros_like(dones, dtype=torch.bool))
         fall_count += (dones & ~time_outs).sum().item()
@@ -382,6 +459,7 @@ def _run_onpolicy(env, cam_ctx, cam_dist, cam_height, log_dir):
         print(f"[INFO] FPS: {timestep / elapsed:.0f}", flush=True)
     print(f"[INFO] Falls: {fall_count}/{timestep} steps", flush=True)
 
+    _save_vel_log(vel_log, log_dir)
     env.close()
     print("[INFO] Environment closed. Video saved.", flush=True)
 

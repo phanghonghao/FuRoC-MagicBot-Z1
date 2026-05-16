@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>/gpu-train 命令速查</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text2: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --tag-bg: #1f2937;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.8rem;
+    margin-bottom: 0.3rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  h1 code {
+    background: var(--accent);
+    color: var(--bg);
+    padding: 0.15rem 0.5rem;
+    border-radius: 6px;
+    font-size: 1.3rem;
+    font-weight: 700;
+  }
+  .subtitle { color: var(--text2); margin-bottom: 2rem; font-size: 0.95rem; }
+
+  /* Category sections */
+  .section { margin-bottom: 2rem; }
+  .section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.6rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .section-title .icon { font-size: 1.2rem; }
+
+  /* Command table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  th {
+    text-align: left;
+    padding: 0.5rem 0.8rem;
+    background: var(--card);
+    color: var(--text2);
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 0.45rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(88,166,255,0.04); }
+
+  code {
+    background: var(--tag-bg);
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+    font-size: 0.85rem;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  .tag {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 10px;
+    font-weight: 600;
+    margin-left: 0.4rem;
+    vertical-align: middle;
+  }
+  .tag-new { background: rgba(63,185,80,0.15); color: var(--green); }
+  .tag-deprecated { background: rgba(248,81,73,0.15); color: var(--red); }
+
+  /* Quick reference */
+  .quick-ref {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem 1.5rem;
+    margin-top: 2.5rem;
+  }
+  .quick-ref h2 {
+    font-size: 1rem;
+    margin-bottom: 0.8rem;
+    color: var(--accent);
+  }
+  .quick-ref dl {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.3rem 2rem;
+    font-size: 0.88rem;
+  }
+  .quick-ref dt { color: var(--text2); }
+  .quick-ref dd { margin-bottom: 0.2rem; }
+
+  /* Rollback update detail box */
+  .detail-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--green);
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+    margin: 0.8rem 0 1.5rem 0;
+    font-size: 0.88rem;
+  }
+  .detail-box h3 { font-size: 0.95rem; margin-bottom: 0.5rem; color: var(--green); }
+  .detail-box ol { padding-left: 1.5rem; }
+  .detail-box li { margin-bottom: 0.25rem; }
+  .detail-box code { color: var(--green); }
+
+  @media (max-width: 700px) {
+    body { padding: 1rem; }
+    .quick-ref dl { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<h1><code>/gpu-train</code> 命令速查</h1>
+<p class="subtitle">所有命令通过 <code>/gpu-train --&lt;command&gt;</code> 在 Claude Code 中调用 &nbsp;|&nbsp; 完整定义: <code>~/.claude/skills/gpu-train/skill.md</code></p>
+
+<!-- Monitoring -->
+<div class="section">
+  <div class="section-title"><span class="icon">&#128069;</span> 监控与查看</div>
+  <table>
+    <thead><tr><th>命令</th><th>功能</th><th>备注</th></tr></thead>
+    <tbody>
+      <tr><td><code>--status</code></td><td>检查训练进程是否存活</td><td>SSH 检测 process</td></tr>
+      <tr><td><code>--tail</code></td><td>最近训练日志（末尾 30 行）</td><td>支持 Z1 / ARM101 子项目</td></tr>
+      <tr><td><code>--live</code></td><td>实时训练输出 (tail -f)</td><td></td></tr>
+      <tr><td><code>--gpu</code></td><td>GPU 使用情况</td><td><code>nvidia-smi</code></td></tr>
+      <tr><td><code>--idle</code></td><td>查找空闲 GPU</td><td>建议可用 <code>--device cuda:X</code></td></tr>
+      <tr><td><code>--mycuda</code></td><td>仅显示自己的 CUDA 进程</td><td>过滤 user=phh</td></tr>
+      <tr><td><code>--models</code></td><td>列出已保存的模型 checkpoint</td><td></td></tr>
+      <tr><td><code>--check</code></td><td>训练健康检查</td><td>趋势分析 + 可操作建议</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Advanced monitoring -->
+<div class="section">
+  <div class="section-title"><span class="icon">&#128200;</span> 高级监控</div>
+  <table>
+    <thead><tr><th>命令</th><th>功能</th><th>备注</th></tr></thead>
+    <tbody>
+      <tr><td><code>--monitor</code></td><td>过拟合检测 + 最佳模型查找</td><td>检测 5 种失败信号</td></tr>
+      <tr><td><code>--monitor_ARM101</code></td><td>ACT Loss 监控 (SO-ARM101)</td><td>ARM101 专用</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Video & Log -->
+<div class="section">
+  <div class="section-title"><span class="icon">&#127909;</span> 视频与日志</div>
+  <table>
+    <thead><tr><th>命令</th><th>功能</th><th>备注</th></tr></thead>
+    <tbody>
+      <tr><td><code>--sim</code></td><td>录制仿真视频（完整 pipeline）</td><td>Isaac Lab + MuJoCo sim2sim</td></tr>
+      <tr><td><code>--compare</code></td><td>视频对比网格</td><td><span class="tag tag-deprecated">已弃用</span> 用 <code>/merge</code></td></tr>
+      <tr><td><code>--training_log</code></td><td>记录本次会话工作总结</td><td>写入 <code>docs/training_logs/</code></td></tr>
+      <tr><td><code>--update</code></td><td>更新训练日志</td><td>追加到已有 log</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Training control -->
+<div class="section">
+  <div class="section-title"><span class="icon">&#9889;</span> 训练控制</div>
+  <table>
+    <thead><tr><th>命令</th><th>功能</th><th>备注</th></tr></thead>
+    <tbody>
+      <tr><td><code>--start</code></td><td>启动 / 恢复训练</td><td>支持 GPU 交互选择</td></tr>
+      <tr><td><code>--kill</code></td><td>停止训练</td><td>kill 训练进程</td></tr>
+      <tr><td><code>--local_play</code></td><td>本地 MuJoCo 键盘测试</td><td>Z1 policy 查看器</td></tr>
+      <tr><td><code>--local_play_ARM101</code></td><td>本地 MuJoCo ACT policy 查看器</td><td>SO-ARM101 专用</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Pipeline -->
+<div class="section">
+  <div class="section-title"><span class="icon">&#127919;</span> 5-Phase Pipeline 自动化</div>
+  <table>
+    <thead><tr><th>命令</th><th>功能</th><th>备注</th></tr></thead>
+    <tbody>
+      <tr><td><code>--orchestrator --start</code></td><td>启动 5-phase pipeline</td><td>支持 <code>--from &lt;SUB_PHASE&gt;</code></td></tr>
+      <tr><td><code>--orchestrator --status</code></td><td>查看 pipeline 状态 + 当前进度</td><td></td></tr>
+      <tr><td><code>--orchestrator --tail</code></td><td>orchestrator 日志尾部</td><td></td></tr>
+      <tr><td><code>--orchestrator --stop</code></td><td>停止 pipeline</td><td>kill orchestrator + 训练</td></tr>
+      <tr><td><code>--orchestrator --resume</code></td><td>从保存状态恢复 pipeline</td><td></td></tr>
+      <tr><td><code>--orchestrator --dry-run</code></td><td>干运行（打印 10 个 sub-phase 配置）</td><td></td></tr>
+      <tr><td><code>--orchestrator --adopt</code></td><td>接管当前运行中的训练 session</td><td></td></tr>
+      <tr><td><code>--rollback-update</code></td><td>Pipeline rollback 后一键同步本地状态</td><td><span class="tag tag-new">NEW</span> 替代旧 <code>--sync-state</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="detail-box">
+    <h3>--rollback-update 详情</h3>
+    <p>Pipeline rollback 后自动同步所有本地文件：</p>
+    <ol>
+      <li>SSH 读 <code>orchestrator_state.json</code> &rarr; 确定当前 sub-phase</li>
+      <li>更新 <code>bestmodel_phase.json</code>（归档旧 phase &rarr; PLANNED）</li>
+      <li>归档旧 <code>videos/p/</code> &rarr; <code>_archived/</code></li>
+      <li>清理 <code>docs/github_readme/</code> 中已归档 phase 的图片</li>
+      <li>更新 <code>README.md</code>（表格 + 移除已删除图片引用）</li>
+    </ol>
+    <p style="margin-top:0.6rem"><code>/gpu-train --rollback-update</code> &nbsp;(自动) &nbsp;&nbsp; <code>/gpu-train --rollback-update --from p2_coarse</code> &nbsp;(手动指定)</p>
+  </div>
+</div>
+
+<!-- Slurm -->
+<div class="section">
+  <div class="section-title"><span class="icon">&#128421;</span> Slurm 集群</div>
+  <table>
+    <thead><tr><th>命令</th><th>功能</th><th>备注</th></tr></thead>
+    <tbody>
+      <tr><td><code>--slurm</code></td><td>Slurm 队列状态 + Bypass 检测</td><td>违规日志、GPU 冲突检测</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Connect -->
+<div class="section">
+  <div class="section-title"><span class="icon">&#128274;</span> 连接</div>
+  <table>
+    <thead><tr><th>命令</th><th>功能</th><th>备注</th></tr></thead>
+    <tbody>
+      <tr><td><code>--connect</code></td><td>测试 SSH 连接</td><td>失败自动启动 iNode VPN</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Quick Reference -->
+<div class="quick-ref">
+  <h2>常用场景速查</h2>
+  <dl>
+    <dt>看看训练还在跑吗</dt><dd><code>/gpu-train --status</code></dd>
+    <dt>看最近日志</dt><dd><code>/gpu-train --tail</code></dd>
+    <dt>哪些 GPU 空闲</dt><dd><code>/gpu-train --idle</code></dd>
+    <dt>我占了哪些 GPU</dt><dd><code>/gpu-train --mycuda</code></dd>
+    <dt>训练健康吗</dt><dd><code>/gpu-train --check</code></dd>
+    <dt>过拟合了吗 / 最佳模型</dt><dd><code>/gpu-train --monitor</code></dd>
+    <dt>启动训练</dt><dd><code>/gpu-train --start</code></dd>
+    <dt>停训练</dt><dd><code>/gpu-train --kill</code></dd>
+    <dt>启动自动化 pipeline</dt><dd><code>/gpu-train --orchestrator --start</code></dd>
+    <dt>Pipeline rollback 后同步</dt><dd><code>/gpu-train --rollback-update</code></dd>
+    <dt>录视频</dt><dd><code>/gpu-train --sim</code></dd>
+    <dt>本地看 policy</dt><dd><code>/gpu-train --local_play</code></dd>
+    <dt>记录今天工作</dt><dd><code>/gpu-train --training_log</code></dd>
+    <dt>查看 Slurm 队列</dt><dd><code>/gpu-train --slurm</code></dd>
+  </dl>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>/gpu-train --sim Current Pipeline</title>
+<style>
+  :root {
+    --bg: #f7f4ec;
+    --panel: rgba(255, 255, 255, 0.88);
+    --panel-strong: #fffdf8;
+    --ink: #1f2937;
+    --muted: #667085;
+    --line: #d8d2c4;
+    --blue: #2563eb;
+    --blue-soft: #e8f0ff;
+    --green: #2f855a;
+    --green-soft: #e8f7ee;
+    --amber: #b7791f;
+    --amber-soft: #fff6dd;
+    --rose: #c2410c;
+    --rose-soft: #fff0ea;
+    --slate-soft: #f3efe6;
+    --shadow: 0 18px 40px rgba(120, 101, 72, 0.12);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    font-family: "Segoe UI", "Noto Sans SC", "PingFang SC", sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(circle at top left, rgba(255, 241, 210, 0.8), transparent 26%),
+      radial-gradient(circle at top right, rgba(219, 234, 254, 0.85), transparent 24%),
+      linear-gradient(180deg, #faf7f0 0%, var(--bg) 100%);
+  }
+
+  .wrap {
+    width: min(1220px, calc(100vw - 40px));
+    margin: 0 auto;
+    padding: 36px 0 56px;
+  }
+
+  .hero {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 250, 240, 0.92));
+    border: 1px solid rgba(216, 210, 196, 0.9);
+    border-radius: 28px;
+    box-shadow: var(--shadow);
+    padding: 28px 30px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::after {
+    content: "";
+    position: absolute;
+    inset: auto -60px -70px auto;
+    width: 220px;
+    height: 220px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(37, 99, 235, 0.16), rgba(37, 99, 235, 0));
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--slate-soft);
+    color: #7a5d2d;
+    border-radius: 999px;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    margin: 16px 0 10px;
+    font-size: clamp(28px, 4vw, 44px);
+    line-height: 1.06;
+    font-weight: 800;
+  }
+
+  .subtitle {
+    margin: 0;
+    max-width: 900px;
+    font-size: 16px;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 22px;
+  }
+
+  .meta-card {
+    background: rgba(255, 253, 248, 0.92);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 14px 16px;
+  }
+
+  .meta-card .k {
+    display: block;
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+
+  .meta-card .v {
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.45;
+  }
+
+  .content {
+    display: grid;
+    grid-template-columns: 1.2fr 0.9fr;
+    gap: 24px;
+    margin-top: 24px;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid rgba(216, 210, 196, 0.92);
+    border-radius: 28px;
+    box-shadow: var(--shadow);
+    padding: 24px;
+    backdrop-filter: blur(8px);
+  }
+
+  .panel h2 {
+    margin: 0 0 8px;
+    font-size: 22px;
+  }
+
+  .panel p.lead {
+    margin: 0 0 20px;
+    color: var(--muted);
+    line-height: 1.65;
+  }
+
+  .steps {
+    position: relative;
+    display: grid;
+    gap: 16px;
+  }
+
+  .steps::before {
+    content: "";
+    position: absolute;
+    left: 19px;
+    top: 12px;
+    bottom: 12px;
+    width: 2px;
+    background: linear-gradient(180deg, rgba(37, 99, 235, 0.18), rgba(194, 65, 12, 0.18));
+  }
+
+  .step {
+    position: relative;
+    padding-left: 54px;
+  }
+
+  .step-card {
+    background: var(--panel-strong);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    padding: 16px 18px 15px;
+  }
+
+  .step-num {
+    position: absolute;
+    left: 0;
+    top: 10px;
+    width: 40px;
+    height: 40px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+    font-weight: 800;
+    color: white;
+    box-shadow: 0 12px 20px rgba(0, 0, 0, 0.08);
+  }
+
+  .step h3 {
+    margin: 0 0 6px;
+    font-size: 18px;
+  }
+
+  .step p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.6;
+    font-size: 14px;
+  }
+
+  .cmd {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #0f172a;
+    overflow-wrap: anywhere;
+  }
+
+  .badge-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .auto {
+    background: var(--green-soft);
+    color: var(--green);
+  }
+
+  .manual {
+    background: var(--amber-soft);
+    color: var(--amber);
+  }
+
+  .gap {
+    background: var(--rose-soft);
+    color: var(--rose);
+  }
+
+  .right-stack {
+    display: grid;
+    gap: 24px;
+  }
+
+  .status-box {
+    border-radius: 22px;
+    padding: 18px;
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(250,247,240,0.9));
+  }
+
+  .status-box h3 {
+    margin: 0 0 10px;
+    font-size: 18px;
+  }
+
+  .status-box ul {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  .compare {
+    display: grid;
+    gap: 12px;
+  }
+
+  .compare-card {
+    border-radius: 20px;
+    padding: 16px;
+    border: 1px solid var(--line);
+    background: rgba(255, 253, 248, 0.92);
+  }
+
+  .compare-card h3 {
+    margin: 0 0 8px;
+    font-size: 17px;
+  }
+
+  .compare-card p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.6;
+    font-size: 14px;
+  }
+
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 14px;
+    margin-top: 18px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 5px;
+  }
+
+  .footer {
+    margin-top: 24px;
+    padding: 18px 22px;
+    border-radius: 22px;
+    background: rgba(255,255,255,0.82);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    line-height: 1.7;
+    box-shadow: var(--shadow);
+  }
+
+  code {
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 0.94em;
+    color: #0f172a;
+  }
+
+  @media (max-width: 980px) {
+    .content {
+      grid-template-columns: 1fr;
+    }
+
+    .meta-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 640px) {
+    .wrap {
+      width: min(100vw - 20px, 100%);
+      padding-top: 20px;
+    }
+
+    .hero,
+    .panel,
+    .footer {
+      border-radius: 22px;
+    }
+
+    .meta-grid,
+    .legend {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">GPU Train · Light HTML</div>
+      <h1><code>/gpu-train --sim</code> 当前工作 Pipeline</h1>
+      <p class="subtitle">
+        这张图现在对应已经修正后的实际 <code>--sim</code> pipeline。
+        结构仍然保持“远端录制 → scp 回本地 → 本地立刻打标”，
+        只是把默认参数、idle GPU 选择、自动下载和自动清理 raw 全部补齐了。
+      </p>
+      <div class="meta-grid">
+        <div class="meta-card">
+          <span class="k">输入模式</span>
+          <span class="v"><code>--best &lt;VERSION&gt;</code> 或 <code>--checkpoint &lt;PATH&gt;</code></span>
+        </div>
+        <div class="meta-card">
+          <span class="k">远端平台</span>
+          <span class="v">RTX 6000D · <code>phh@192.168.120.155</code> · env=<code>isaaclab</code></span>
+        </div>
+        <div class="meta-card">
+          <span class="k">核心输出</span>
+          <span class="v">Isaac Lab MP4 + MuJoCo MP4 + 可选本地标签与图表</span>
+        </div>
+        <div class="meta-card">
+          <span class="k">当前差异</span>
+          <span class="v">默认值与下载/打标链路已按当前要求修正</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="content">
+      <div class="panel">
+        <h2>实际执行流</h2>
+        <p class="lead">
+          下面这一列对应当前仓库里已经修正过的实际落地实现：
+          <code>rtx_record_video.sh</code>。
+        </p>
+        <div class="steps">
+          <div class="step">
+            <div class="step-num" style="background: var(--blue);">1</div>
+            <div class="step-card">
+              <h3>解析输入</h3>
+              <p>先确定远端 run 和 checkpoint。当前一键脚本仍以 <code>&lt;RUN_DIR&gt; + &lt;CHECKPOINT&gt;</code> 为入口，保持原来的远端录制结构。</p>
+              <div class="badge-row">
+                <span class="badge auto">文档支持</span>
+                <span class="badge manual">脚本本体吃 RUN_DIR + CHECKPOINT</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-num" style="background: var(--blue);">2</div>
+            <div class="step-card">
+              <h3>远端 GPU 健康检查</h3>
+              <p>先通过 SSH 执行 <code>nvidia-smi</code>，确认 RTX 侧 GPU 可用。失败时整条录制流程直接中止。</p>
+              <div class="cmd">ssh phh@192.168.120.155 "nvidia-smi --query-gpu=name,memory.free --format=csv,noheader"</div>
+              <div class="badge-row">
+                <span class="badge auto">脚本自动</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-num" style="background: var(--green);">3</div>
+            <div class="step-card">
+              <h3>补齐或复用 JIT policy</h3>
+              <p>脚本会检查 <code>&lt;run_dir&gt;/exported/policy.pt</code> 是否已存在。没有就调用 <code>scripts/export_jit.py</code> 导出；有就直接复用。</p>
+              <div class="cmd">python -u scripts/export_jit.py --checkpoint logs/rsl_rl/&lt;RUN_DIR&gt;/&lt;CHECKPOINT&gt;.pt --output logs/rsl_rl/&lt;RUN_DIR&gt;/exported/policy.pt</div>
+              <div class="badge-row">
+                <span class="badge auto">脚本自动</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-num" style="background: var(--green);">4</div>
+            <div class="step-card">
+              <h3>录制 Isaac Lab 视频</h3>
+              <p>通过 <code>play_z1_video.py</code> 在 RTX 侧 headless 录制 Isaac Lab 视频。默认改为 <code>video_length=1000</code>，显卡不再写死 <code>cuda:0</code>，而是自动选一张符合 <code>--idle</code> 规则的空闲卡；同时增加 <code>timeout 600s</code>，避免异常 run 一直挂住。</p>
+              <div class="cmd">timeout 600s python -u scripts/rsl_rl/play_z1_video.py --checkpoint &lt;CKPT_PATH&gt; --headless --video --video_length 1000 --num_envs 1 --device cuda:&lt;IDLE_GPU&gt;</div>
+              <div class="badge-row">
+                <span class="badge auto">脚本自动</span>
+                <span class="badge auto">GPU 自动按 idle 规则选择</span>
+                <span class="badge auto">Isaac timeout 600s</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-num" style="background: var(--amber);">5</div>
+            <div class="step-card">
+              <h3>等待 Kit 清理后再录 MuJoCo</h3>
+              <p>Isaac 录制结束后，脚本会先等待 Kit 相关进程退出，避免 KVDB lock 一类冲突；等待上限是 <code>60s</code>，超时后会强制清理残留 Kit。之后再调用 <code>sim2sim/mujoco_manual.py</code> 远端录制 MuJoCo，默认参数是 <code>duration=20</code>、<code>vel_x=0.3</code>，按 50Hz 折算为 <code>num_steps=1000</code>，并增加 <code>timeout 300s</code>。</p>
+              <div class="cmd">wait_for_kit_cleanup()  # up to 60s, force-kill stale Kit if needed<br>timeout 300s python -u sim2sim/mujoco_manual.py --mjcf ~/magicbot-z1_description/mjcf/MAGICBOTZ1.xml --policy &lt;POLICY_PATH&gt; --deploy_cfg &lt;DEPLOY_CFG_PATH&gt; --record /tmp/&lt;RUN&gt;_&lt;CKPT&gt;_mujoco.mp4 --num_steps 1000 --vel_x 0.3</div>
+              <div class="badge-row">
+                <span class="badge auto">脚本自动</span>
+                <span class="badge auto">Kit cleanup 60s</span>
+                <span class="badge auto">MuJoCo timeout 300s</span>
+                <span class="badge auto">远端 RTX 录制</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-num" style="background: var(--amber);">6</div>
+            <div class="step-card">
+              <h3>自动 scp 回本地</h3>
+              <p>录制完成后，脚本会自动把 Isaac Lab 视频、MuJoCo 视频，以及对应的 <code>params/</code> 目录一起拉回本地，不再停在“打印 scp 命令”这一步。</p>
+              <div class="cmd">scp remote:Isaac.mp4 -&gt; local raw<br>scp remote:MuJoCo.mp4 -&gt; local raw<br>scp -r remote:params/ -&gt; local params/</div>
+              <div class="badge-row">
+                <span class="badge auto">脚本自动</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-num" style="background: var(--rose);">7</div>
+            <div class="step-card">
+              <h3>下载后立刻打标签并删除 raw</h3>
+              <p><code>label_video.py</code> 现在属于 <code>--sim</code> 的实际 pipeline，不再被描述成独立后处理。视频下载完成后会立刻按本次录制参数打标，成功后删除本地 raw 文件。</p>
+              <div class="cmd">python Magicbot_Z1/scripts/label_video.py raw.mp4 -o final.mp4 --run &lt;PHASE&gt; --model &lt;CKPT&gt; --vel 0.3 m/s --extra "sim: IsaacLab/MuJoCo" ...<br>rm raw.mp4</div>
+              <div class="badge-row">
+                <span class="badge auto">脚本自动</span>
+                <span class="badge auto">raw 自动清理</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right-stack">
+        <div class="panel">
+          <h2>文档定义 vs 现在现状</h2>
+          <div class="compare">
+            <div class="compare-card">
+              <h3>文档里的目标定义</h3>
+              <p>较早的说明里把 <code>--sim</code> 写成 5 步：JIT 导出 → Isaac 录制 → MuJoCo 录制 → 下载视频 → 本地打标签。现在这张图只保留当前有效流程，不再单独指向旧说明文件。</p>
+            </div>
+            <div class="compare-card">
+              <h3>现在真正可跑的一键路径</h3>
+              <p><code>rtx_record_video.sh</code> 现在是 GPU 检查/选卡 → JIT 检查/导出 → Isaac 录制 → Kit 清理等待 → MuJoCo 录制 → 自动 scp 下载 → 自动打标签并删除 raw。</p>
+            </div>
+            <div class="compare-card">
+              <h3>最关键的现实差异</h3>
+              <p>现在脚本和文档定义已经基本对齐，但仍然保持原始原则：录制始终发生在远端 RTX，回传和打标发生在本地。学习曲线绘图仍然是另一路，不属于这条视频 pipeline。</p>
+            </div>
+            <div class="compare-card">
+              <h3>这次异常长的主要原因与修正</h3>
+              <p>现象上主要是两件事叠加：批量中断后远端残留 Isaac 录制还在跑；旧脚本没有 <code>timeout</code> 和 Kit 清理等待，异常 run 会把后面的 phase 一起拖长。现在脚本已经补上 <code>ISAAC_TIMEOUT_SEC=600</code>、<code>MUJOCO_TIMEOUT_SEC=300</code>、<code>KIT_CLEANUP_TIMEOUT_SEC=60</code>，并在超时后强制回收 stale Kit 进程。</p>
+            </div>
+            <div class="compare-card">
+              <h3>单 phase 耗时预期</h3>
+              <p>正常情况下，单个 phase 应该是“Isaac 录制几分钟内完成 + 最多 60 秒 Kit 清理 + MuJoCo 约 20 秒实录与编码 + scp 回传 + 本地打标”。如果明显长于这个量级，优先怀疑远端残留 Isaac/Kit 进程没有退出。</p>
+            </div>
+          </div>
+          <div class="legend">
+            <div class="legend-item"><span class="swatch" style="background: var(--green);"></span> 已在脚本里自动执行</div>
+            <div class="legend-item"><span class="swatch" style="background: var(--amber);"></span> 需要后续接力</div>
+            <div class="legend-item"><span class="swatch" style="background: var(--rose);"></span> 文档与实现存在缺口</div>
+            <div class="legend-item"><span class="swatch" style="background: var(--blue);"></span> 参数解析与入口层</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>当前入口参数</h2>
+          <div class="status-box">
+            <h3>常用参数</h3>
+            <ul>
+              <li><code>--best &lt;VERSION&gt;</code>：从 <code>best_models.json</code> 自动解析 checkpoint。</li>
+              <li><code>--checkpoint &lt;PATH&gt;</code>：手动指定模型。</li>
+              <li><code>--video_length</code>：Isaac Lab 默认 1000；MuJoCo 以 20s@50Hz 对应到同量级 1000 steps。</li>
+              <li><code>--vel_x</code>：MuJoCo 默认前进速度改为 0.3m/s。</li>
+              <li><code>--duration</code>：MuJoCo 默认时长改为 20 秒。</li>
+              <li><code>GPU_ID</code>：默认 <code>auto</code>，优先挑一张满足 <code>--idle</code> 规则的空闲卡。</li>
+              <li><code>ISAAC_TIMEOUT_SEC</code> / <code>MUJOCO_TIMEOUT_SEC</code>：默认分别为 600 秒和 300 秒。</li>
+              <li><code>KIT_CLEANUP_TIMEOUT_SEC</code>：默认 60 秒，超时后强制清理残留 Kit。</li>
+              <li><code>--mujoco_only</code> / <code>--isaac_only</code>：只录单一路径。</li>
+              <li><code>--skip_export</code>：跳过 JIT 导出检查。</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>你现在最该关心的点</h2>
+          <div class="status-box">
+            <h3>工作结论</h3>
+            <ul>
+              <li>现在跑 <code>--sim</code>，实际含义就是：远端录制两段视频，再自动 scp 回本地并立刻打标。</li>
+              <li>Isaac Lab 不再强制绑死 <code>cuda:0</code>，会优先使用满足 <code>--idle</code> 规则的空闲卡。</li>
+              <li>为避免异常长，脚本会给 Isaac/MuJoCo 加 timeout，并在 Isaac 后等待 Kit 清理，不再直接硬切到下一段录制。</li>
+              <li>绘图仍然走 <code>/plot-train-Z1</code>，不混进这条视频链路。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="footer">
+      Source map:
+      <code>docs/GPU_Train_Command_Reference.md</code>,
+      <code>rtx_record_video.sh</code>,
+      <code>Magicbot_Z1/scripts/label_video.py</code>,
+      <code>Magicbot_Z1/scripts/plot_learning_curves.py</code>.
+    </section>
+  </div>
+</body>
+</html>

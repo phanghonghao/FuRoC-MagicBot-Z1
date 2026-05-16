@@ -55,11 +55,19 @@ PHASE_TERRAIN = {
 # ---------------------------------------------------------------------------
 # Terrain generation (matching Isaac Sim p3b config)
 # ---------------------------------------------------------------------------
-def generate_terrain_data(terrain_type="p3b", seed=42):
+def generate_terrain_data(terrain_type="p3b", seed=42, difficulty=1.0):
     """Generate terrain heightmap matching Isaac Sim training config.
+
+    Args:
+        terrain_type: "p3" or "p3b"
+        seed: Random seed for reproducibility
+        difficulty: Scale factor for terrain height (0-1). At 1.0, full height.
+                    In Isaac Lab, actual difficulty = terrain_level / (num_rows - 1).
+                    For p3_coarse with level ~5/9, difficulty ≈ 0.625.
 
     Returns: (nrow, ncol, half_x, half_y, max_elev, hmap)
     """
+    difficulty = float(np.clip(difficulty, 0.0, 1.0))
     H_SCALE = 0.1  # meters per grid cell (matches Isaac Sim horizontal_scale)
 
     if terrain_type == "p3":
@@ -142,16 +150,26 @@ def generate_terrain_data(terrain_type="p3b", seed=42):
             padded[2:, :-2] + padded[2:, 1:-1] + padded[2:, 2:]
         ) / 9.0
 
+    # Apply difficulty scaling (match Isaac Lab curriculum level)
+    if difficulty < 1.0:
+        hmap *= difficulty
+        effective_max = MAX_ELEV * difficulty
+        print(f"[TERRAIN] Difficulty={difficulty:.3f}: scaling height to {effective_max:.3f}m "
+              f"(was {MAX_ELEV:.3f}m)")
+    else:
+        effective_max = MAX_ELEV
+
     print(f"[TERRAIN] Generated {terrain_type}: {TERRAIN_L}m x {TERRAIN_W}m, "
-          f"grid {nrow}x{ncol}, elevation [{hmap.min()*MAX_ELEV:.3f}, {hmap.max()*MAX_ELEV:.3f}]m")
-    return nrow, ncol, TERRAIN_L / 2, TERRAIN_W / 2, MAX_ELEV, hmap
+          f"grid {nrow}x{ncol}, elevation [{hmap.min()*MAX_ELEV:.3f}, {hmap.max()*MAX_ELEV:.3f}]m, "
+          f"effective_max={effective_max:.3f}m")
+    return nrow, ncol, TERRAIN_L / 2, TERRAIN_W / 2, effective_max, hmap
 
 
-def load_model_with_terrain(mjcf_path, terrain_type):
+def load_model_with_terrain(mjcf_path, terrain_type, difficulty=1.0):
     """Load MuJoCo model with terrain hfield injected via Python API."""
     import mujoco
 
-    nrow, ncol, half_x, half_y, max_elev, terrain_data = generate_terrain_data(terrain_type)
+    nrow, ncol, half_x, half_y, max_elev, terrain_data = generate_terrain_data(terrain_type, difficulty=difficulty)
 
     # Read original XML
     with open(mjcf_path, 'r') as f:
@@ -188,8 +206,17 @@ def parse_args():
     parser.add_argument("--vel_x", type=float, default=0.5, help="Forward velocity command (m/s)")
     parser.add_argument("--vel_y", type=float, default=0.0, help="Lateral velocity command (m/s)")
     parser.add_argument("--vel_yaw", type=float, default=0.0, help="Yaw velocity command (rad/s)")
+    parser.add_argument("--vel_sweep", action="store_true",
+                        help="Sweep vel_x from --vel_min to --vel_max, test each velocity level")
+    parser.add_argument("--vel_min", type=float, default=0.0, help="Sweep start velocity (m/s)")
+    parser.add_argument("--vel_max", type=float, default=1.0, help="Sweep end velocity (m/s)")
+    parser.add_argument("--vel_step", type=float, default=0.1, help="Sweep velocity increment (m/s)")
+    parser.add_argument("--steps_per_vel", type=int, default=200,
+                        help="Steps per velocity level in sweep mode (default: 200 = 4s @50Hz)")
     parser.add_argument("--keyboard", action="store_true", help="Use keyboard for velocity commands")
     parser.add_argument("--num_steps", type=int, default=10000, help="Number of control steps")
+    parser.add_argument("--terrain_difficulty", type=float, default=None,
+                        help="Scale terrain height by this factor (0-1). Example: current p3_coarse curriculum is about 0.625.")
     parser.add_argument("--record", type=str, default=None, help="Record video to this path (EGL offscreen)")
     parser.add_argument("--terrain", type=str, default=None, help="Terrain type: 'p3' or 'p3b'")
     parser.add_argument("--phase", type=str, default=None,
@@ -484,7 +511,7 @@ def compute_gait_phase(sim_time, vel_cmd, period=GAIT_PERIOD):
 
 
 class MuJoCoDeploy:
-    def __init__(self, mjcf_path, policy_runner=None, deploy_cfg=None, vel_cmd=None, terrain=None):
+    def __init__(self, mjcf_path, policy_runner=None, deploy_cfg=None, vel_cmd=None, terrain=None, terrain_difficulty=1.0):
         import mujoco
 
         self.policy = policy_runner
@@ -510,7 +537,7 @@ class MuJoCoDeploy:
 
         # Load model (with optional terrain)
         if terrain:
-            self.model = load_model_with_terrain(mjcf_path, terrain)
+            self.model = load_model_with_terrain(mjcf_path, terrain, difficulty=terrain_difficulty)
         else:
             self.model = mujoco.MjModel.from_xml_path(mjcf_path)
         self.model.opt.timestep = PHYSICS_DT
@@ -622,6 +649,7 @@ class MuJoCoDeploy:
         import mujoco
         obs_history = self.obs_buffer.get()
         action = self.policy.predict(obs_history)
+        action = np.clip(action, -100.0, 100.0)
         self.last_action = action.copy()
         target_pos = self.action_offset + action * self.action_scale
         for _ in range(DECIMATION):
@@ -712,6 +740,26 @@ def main():
         print(f"[INFO] Loaded policy from {args.policy} (ONNX={args.onnx})")
 
     vel_cmd = [args.vel_x, args.vel_y, args.vel_yaw]
+
+    # Velocity sweep setup
+    vel_sweep = args.vel_sweep
+    vel_stable_max = None
+    sweep_results = []  # per-velocity results
+
+    if vel_sweep and not (args.keyboard or args.manual):
+        vel_levels = list(np.arange(args.vel_min, args.vel_max + args.vel_step / 2, args.vel_step))
+        steps_per_vel = args.steps_per_vel
+        total_sweep_steps = len(vel_levels) * steps_per_vel
+        vel_cmd[0] = vel_levels[0]
+        print(f"[INFO] Velocity sweep: {len(vel_levels)} levels × {steps_per_vel} steps "
+              f"({vel_levels[0]:.1f} → {vel_levels[-1]:.1f} m/s, "
+              f"{total_sweep_steps} total steps = {total_sweep_steps * CONTROL_DT:.0f}s)")
+    else:
+        vel_levels = None
+        steps_per_vel = None
+        total_sweep_steps = None
+        vel_cmd[0] = args.vel_x
+
     kb_controller = None
     if args.keyboard or args.manual:
         kb_controller = KeyboardController(
@@ -736,7 +784,12 @@ def main():
         elif terrain is not None and args.phase is not None:
             print(f"[INFO] Phase '{args.phase}' overridden by explicit --terrain '{terrain}'")
 
-    env = MuJoCoDeploy(args.mjcf, policy, deploy_cfg=deploy_cfg, vel_cmd=vel_cmd, terrain=terrain)
+    terrain_diff = args.terrain_difficulty if args.terrain_difficulty is not None else 1.0
+    if terrain == "p3" and args.terrain_difficulty is None:
+        print("[WARN] --terrain_difficulty not set; using full p3 height (1.0). "
+              "For the current p3_coarse run, ~0.625 is closer to the trained curriculum.")
+    env = MuJoCoDeploy(args.mjcf, policy, deploy_cfg=deploy_cfg, vel_cmd=vel_cmd, terrain=terrain,
+                        terrain_difficulty=terrain_diff)
     print(f"[INFO] MuJoCo model loaded from {args.mjcf}" +
           (f" with terrain={terrain}" if terrain else " (flat ground)"))
     print(f"[INFO] Control frequency: {1.0/CONTROL_DT:.0f}Hz, Physics: {1.0/PHYSICS_DT:.0f}Hz")
@@ -806,9 +859,21 @@ def main():
             viewer = None
 
     fall_count = 0
-    print(f"[INFO] Running {args.num_steps} steps...")
+    num_total = total_sweep_steps if vel_sweep and vel_levels else args.num_steps
+    print(f"[INFO] Running {num_total} steps...")
     try:
-        for step in range(args.num_steps):
+        for step in range(num_total):
+
+            # ── Sweep: velocity transition ──
+            if vel_sweep and vel_levels:
+                vel_idx = step // steps_per_vel
+                local_step = step % steps_per_vel
+                if local_step == 0:
+                    # Start of a new velocity level
+                    env.vel_cmd[0] = vel_levels[vel_idx]
+                    env.reset()
+                    current_vel_x_start = env.get_robot_state()['x']
+                    current_vel_falls = 0
             if kb_controller:
                 kb_controller.update()
                 if not kb_controller.running:
@@ -839,7 +904,11 @@ def main():
             else:
                 fell = env.step()
                 if fell:
-                    env.reset()
+                    if vel_sweep and vel_levels:
+                        env.reset()
+                        current_vel_falls += 1
+                    else:
+                        env.reset()
                     fall_count += 1
 
             if csv_writer:
@@ -881,6 +950,23 @@ def main():
                           f"pos=({state['x']:.2f}, {state['y']:.2f}, {state['z']:.2f}) | "
                           f"{vel_cmd_str} | falls={fall_count}")
 
+            # ── Sweep: end of velocity level ──
+            if vel_sweep and vel_levels:
+                vel_idx = step // steps_per_vel
+                local_step = step % steps_per_vel
+                if local_step == steps_per_vel - 1:
+                    # Last step of this velocity level — record results
+                    state = env.get_robot_state()
+                    x_delta = state['x'] - current_vel_x_start
+                    vel = vel_levels[vel_idx]
+                    sweep_results.append({
+                        "velocity": round(vel, 2),
+                        "falls": current_vel_falls,
+                        "x_displacement": round(x_delta, 3),
+                    })
+                    tag = "STABLE" if current_vel_falls == 0 else f"{current_vel_falls} fall{'s' if current_vel_falls > 1 else ''}"
+                    print(f"  [SWEEP] {vel:.1f} m/s: {tag}, Δx={x_delta:+.2f}m")
+
             if viewer and not args.record:
                 time.sleep(max(0, CONTROL_DT - 0.001))
 
@@ -893,6 +979,30 @@ def main():
         imageio.mimwrite(args.record, frames, fps=int(1.0 / CONTROL_DT))
         sz = os.path.getsize(args.record) / (1024 * 1024)
         print(f"[INFO] Done! {args.record} ({sz:.1f} MB), Falls: {fall_count}")
+
+        # Save sweep metadata alongside video
+        if vel_sweep and sweep_results:
+            import json
+            meta_path = args.record.rsplit('.', 1)[0] + '_sweep.json'
+            stable_max = max(
+                (r["velocity"] for r in sweep_results if r["falls"] == 0),
+                default=None,
+            )
+            sweep_metadata = {
+                "vel_min": args.vel_min,
+                "vel_max": args.vel_max,
+                "vel_step": args.vel_step,
+                "steps_per_vel": steps_per_vel,
+                "vel_stable_max": stable_max,
+                "total_falls": fall_count,
+                "total_steps": len(frames),
+                "per_velocity": sweep_results,
+            }
+            with open(meta_path, 'w') as f:
+                json.dump(sweep_metadata, f, indent=2)
+            print(f"[INFO] Sweep summary: stable_max={stable_max} m/s, "
+                  f"total_falls={fall_count}")
+            print(f"[INFO] Saved: {meta_path}")
 
     if viewer is not None:
         try:

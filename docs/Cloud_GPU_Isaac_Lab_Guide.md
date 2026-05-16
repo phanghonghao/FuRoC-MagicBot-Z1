@@ -68,6 +68,8 @@ bash D:/Desktop_Files/GPU-Train/RTX6000/rtx_record_video.sh <RUN_DIR> <CHECKPOIN
 /gpu-train --sim --best v4_gentle
 ```
 
+说明：当前 `--sim` / `rtx_record_video.sh` 会自动完成远端录制、`scp` 回本地、打标签、删除本地 raw 视频。
+
 **优点**：零额外成本，已验证能跑
 **缺点**：需要 RTX 6000 在线，录制期间不能同时跑 Isaac Sim（会占所有 GPU）
 
@@ -82,7 +84,7 @@ python sim2sim/mujoco_manual.py \
     --mjcf ~/magicbot-z1_description/mjcf/MAGICBOTZ1.xml \
     --policy policy.pt \
     --record /tmp/z1_cloud.mp4 \
-    --num_steps 500 --vel_x 0.5
+    --num_steps 1000 --vel_x 0.3
 ```
 
 **验证步骤**（SSH 到云容器后）：

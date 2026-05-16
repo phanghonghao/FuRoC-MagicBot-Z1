@@ -1,5 +1,8 @@
 # RTX 训练 → 策略导出 → 视频录制 完整流程
 
+> 这份文档保留为历史说明。当前日常使用请优先参考 `rtx_record_video.sh` 和 `/gpu-train --sim` 的现行流程：
+> 远端 RTX 录制 → 自动 `scp` 回本地 → 自动打标签 → 删除本地 raw 视频。
+
 > 本文档记录已验证通过的端到端流程：RTX6000 上训练 → JIT 导出 → RTX Isaac Sim / MuJoCo 录视频。
 >
 > 最后验证：2026-05-07，FPS 修复（50fps = 控制频率），video_length=500（10s 实时）。

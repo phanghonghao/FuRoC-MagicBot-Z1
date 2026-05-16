@@ -65,7 +65,7 @@ def draw_label(
     Args:
         frame: HxWx3 or HxWx4 uint8 array.
         lines: Text lines to render.
-        position: "top-right" (default).
+        position: "top-right" (default) or "top-left".
         font_size: Font size in pixels.
         padding: Inner padding of the label box.
 
@@ -125,6 +125,108 @@ def draw_label(
     return out
 
 
+def draw_vel_badge(
+    frame: np.ndarray,
+    vel_text: str,
+    font_size: int = 20,
+) -> np.ndarray:
+    """Draw velocity badge in the top-left corner.
+
+    Visually distinct from the metrics label: blue accent bar on the left,
+    slightly larger font, positioned at top-left with a small gap below
+    any existing top-left content.
+
+    Args:
+        frame: HxWx3 or HxWx4 uint8 array.
+        vel_text: Velocity display string (e.g. "vel: 0.0→1.0 m/s").
+        font_size: Font size in pixels.
+
+    Returns:
+        Frame with velocity badge overlay.
+    """
+    img = Image.fromarray(frame).convert("RGBA")
+    font = _get_font(font_size)
+
+    # Measure text
+    dummy_draw = ImageDraw.Draw(img)
+    bbox = dummy_draw.textbbox((0, 0), vel_text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    padding_x, padding_y = 10, 6
+    bar_w = 4  # accent bar width
+    box_w = text_w + padding_x * 2 + bar_w + 4
+    box_h = text_h + padding_y * 2
+
+    x0, y0 = 10, 10
+
+    # Draw background
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ov_draw = ImageDraw.Draw(overlay)
+    ov_draw.rounded_rectangle(
+        [x0, y0, x0 + box_w, y0 + box_h],
+        radius=6,
+        fill=(0, 0, 0, 180),
+    )
+    # Blue accent bar on left edge
+    ov_draw.rounded_rectangle(
+        [x0, y0, x0 + bar_w, y0 + box_h],
+        radius=2,
+        fill=(0, 150, 255, 255),
+    )
+    img = Image.alpha_composite(img, overlay)
+
+    # Draw text
+    draw = ImageDraw.Draw(img)
+    draw.text(
+        (x0 + bar_w + 4 + padding_x - padding_x + 4, y0 + padding_y),
+        vel_text,
+        font=font,
+        fill=(255, 255, 255, 255),
+    )
+
+    out = np.array(img)
+    if frame.ndim == 3 and frame.shape[2] == 3:
+        out = out[:, :, :3]
+    return out
+
+
+def _format_dynamic_vel_text(vx: float | None, vy: float | None, vyaw: float | None) -> str | None:
+    """Format a compact velocity badge from per-frame commands."""
+    parts = []
+    if vx is not None:
+        parts.append(f"vx={vx:.2f}")
+    if vy is not None:
+        parts.append(f"vy={vy:.2f}")
+    if vyaw is not None:
+        parts.append(f"wz={vyaw:.2f}")
+    if not parts:
+        return None
+    return "cmd " + " ".join(parts)
+
+
+def _build_dynamic_vel_text(frame_idx: int, sweep_data: dict) -> str | None:
+    """Build per-frame velocity badge text from supported JSON formats."""
+    if sweep_data.get("type") == "isaac_lab":
+        def _pick(values: list[float | None] | None) -> float | None:
+            if not values:
+                return None
+            idx = min(frame_idx, len(values) - 1)
+            value = values[idx]
+            return None if value is None else float(value)
+
+        return _format_dynamic_vel_text(
+            _pick(sweep_data.get("vel_x")),
+            _pick(sweep_data.get("vel_y")),
+            _pick(sweep_data.get("vel_yaw")),
+        )
+
+    steps_per_vel = sweep_data["steps_per_vel"]
+    vel_list = [v["velocity"] for v in sweep_data["per_velocity"]]
+    vel_idx = min(frame_idx // steps_per_vel, len(vel_list) - 1)
+    return f"vel_x: {vel_list[vel_idx]:.1f} m/s"
+
+
 # ── Main pipeline ────────────────────────────────────────────────────────── #
 
 
@@ -133,14 +235,37 @@ def label_video(
     output_path: str,
     lines: list[str],
     font_size: int = 18,
+    vel_text: str | None = None,
+    sweep_json: str | None = None,
 ) -> None:
-    """Read video, add labels to every frame, write output."""
+    """Read video, add labels to every frame, write output.
+
+    If sweep_json is provided, the velocity badge is drawn dynamically
+    per frame based on the sweep's per-velocity step ranges.
+    """
     input_path = str(input_path)
     output_path = str(output_path)
+
+    # Parse dynamic velocity data for per-frame labeling
+    sweep_data = None
+    if sweep_json:
+        with open(sweep_json, encoding="utf-8") as f:
+            sweep_data = json.load(f)
+        if sweep_data.get("type") == "isaac_lab":
+            print(f"[label_video] Isaac velocity log: {sweep_data.get('num_frames', 0)} frames")
+        else:
+            steps_per_vel = sweep_data["steps_per_vel"]
+            vel_list = [v["velocity"] for v in sweep_data["per_velocity"]]
+            vel_min = sweep_data["vel_min"]
+            vel_max = sweep_data["vel_max"]
+            print(f"[label_video] Sweep: {len(vel_list)} velocities × {steps_per_vel} steps "
+                  f"({vel_min:.1f} → {vel_max:.1f} m/s)")
 
     print(f"[label_video] Input:  {input_path}")
     print(f"[label_video] Output: {output_path}")
     print(f"[label_video] Labels: {lines}")
+    if vel_text:
+        print(f"[label_video] Vel badge (top-left): {vel_text}")
 
     # Read all frames
     frames = list(iio.imiter(input_path, plugin="pyav"))
@@ -150,7 +275,17 @@ def label_video(
     # Process each frame
     labeled = []
     for i, frame in enumerate(frames):
-        labeled.append(draw_label(frame, lines, font_size=font_size))
+        out = draw_label(frame, lines, font_size=font_size)
+
+        # Dynamic velocity from JSON, or static vel_text
+        if sweep_data:
+            cur_vel_text = _build_dynamic_vel_text(i, sweep_data)
+            if cur_vel_text:
+                out = draw_vel_badge(out, cur_vel_text)
+        elif vel_text:
+            out = draw_vel_badge(out, vel_text)
+
+        labeled.append(out)
         if (i + 1) % 50 == 0 or i == n - 1:
             print(f"  Labeled {i + 1}/{n} frames", end="\r")
 
@@ -187,6 +322,9 @@ def build_lines(args: argparse.Namespace) -> list[str]:
     if model:
         lines.append(f"Model: {model}")
 
+    # ── Velocity (drawn separately as top-left badge, not in main label) ─
+    # vel is handled by draw_vel_badge(), not added to lines
+
     # ── Behavioral metrics (cross-run comparable) ────────────────────────
     if args.time_out is not None:
         lines.append(f"time_out: {args.time_out:.1%}")
@@ -217,33 +355,41 @@ def main():
     parser.add_argument("--ep-len", type=float, help="Mean episode length")
     parser.add_argument("--bad-ori", type=float, help="bad_orientation ratio (0-1)")
     parser.add_argument("--vel-err", type=float, help="Velocity tracking error (m/s)")
+    parser.add_argument("--vel", type=str, help="Velocity info (e.g. '0.5 m/s' or '0.0→1.0 m/s')")
+    parser.add_argument("--sweep-json", type=str, help="Sweep metadata JSON for dynamic velocity labels")
     parser.add_argument("--extra", nargs="*", help="Additional custom label lines")
     parser.add_argument("--font-size", type=int, default=18, help="Font size (default: 18)")
 
     args = parser.parse_args()
 
     lines = build_lines(args)
-    if not lines:
-        print("No label info provided. Use --model, --run, --reward, etc.")
+    vel_text = None
+    if hasattr(args, 'vel') and args.vel:
+        vel_text = f"vel_x: {args.vel}"
+    if not lines and not vel_text and not args.sweep_json:
+        print("No label info provided. Use --model, --run, --vel, etc.")
         sys.exit(1)
 
     inputs = [Path(p) for p in args.input]
 
     if len(inputs) == 1 and args.output:
         # Single file mode
-        label_video(str(inputs[0]), args.output, lines, font_size=args.font_size)
+        label_video(str(inputs[0]), args.output, lines, font_size=args.font_size,
+                    vel_text=vel_text, sweep_json=args.sweep_json)
     elif args.outdir:
         # Batch mode
         outdir = Path(args.outdir)
         outdir.mkdir(parents=True, exist_ok=True)
         for inp in inputs:
             out = outdir / f"{inp.stem}_labeled{inp.suffix}"
-            label_video(str(inp), str(out), lines, font_size=args.font_size)
+            label_video(str(inp), str(out), lines, font_size=args.font_size,
+                        vel_text=vel_text, sweep_json=args.sweep_json)
     else:
         # Default: _labeled suffix
         for inp in inputs:
             out = inp.parent / f"{inp.stem}_labeled{inp.suffix}"
-            label_video(str(inp), str(out), lines, font_size=args.font_size)
+            label_video(str(inp), str(out), lines, font_size=args.font_size,
+                        vel_text=vel_text, sweep_json=args.sweep_json)
 
 
 if __name__ == "__main__":
