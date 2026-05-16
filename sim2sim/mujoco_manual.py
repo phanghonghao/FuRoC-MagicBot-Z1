@@ -185,7 +185,7 @@ def parse_args():
     parser.add_argument("--deploy_cfg", type=str, default=None, help="Path to deploy.yaml (optional)")
     parser.add_argument("--manual", action="store_true", help="Manual joint control mode (no policy)")
     parser.add_argument("--onnx", action="store_true", help="Use ONNX model instead of JIT")
-    parser.add_argument("--vel_x", type=float, default=0.5, help="Forward velocity command (m/s)")
+    parser.add_argument("--vel_x", type=float, default=0.3, help="Forward velocity command (m/s)")
     parser.add_argument("--vel_y", type=float, default=0.0, help="Lateral velocity command (m/s)")
     parser.add_argument("--vel_yaw", type=float, default=0.0, help="Yaw velocity command (rad/s)")
     parser.add_argument("--keyboard", action="store_true", help="Use keyboard for velocity commands")
@@ -218,6 +218,40 @@ LEG_ACTUATOR_NAMES = [
     "right_hip_pitch_actuator", "right_hip_roll_actuator", "right_hip_yaw_actuator",
     "right_knee_actuator", "right_ankle_pitch_actuator", "right_ankle_roll_actuator",
 ]
+
+# Upper body joints & actuators (waist, head, arms) — held at default pos
+UPPER_BODY_JOINTS = [
+    "joint_wy", "joint_hy",
+    "joint_la1", "joint_la2", "joint_la3", "joint_la4", "joint_la5",
+    "joint_ra1", "joint_ra2", "joint_ra3", "joint_ra4", "joint_ra5",
+]
+
+UPPER_BODY_ACTUATORS = [
+    "wrist_yaw_actuator", "head_yaw_actuator",
+    "left_shoulder_pitch_actuator", "left_shoulder_roll_actuator",
+    "left_shoulder_yaw_actuator", "left_elbow_actuator", "left_hand_yaw_actuator",
+    "right_shoulder_pitch_actuator", "right_shoulder_roll_actuator",
+    "right_shoulder_yaw_actuator", "right_elbow_actuator", "right_hand_yaw_actuator",
+]
+
+UPPER_BODY_DEFAULT_POS = np.array([
+    0.0, 0.0,                                    # waist, head
+    0.0, 0.0, 0.0, 1.00, 0.0,                    # left arm (la1-la5)
+    0.0, 0.0, 0.0, 1.00, 0.0,                    # right arm (ra1-ra5)
+], dtype=np.float64)
+
+#UPPER_BODY PD gains
+UPPER_BODY_KP = np.array([
+    40.0, 40.0,                                      # waist, head
+    40.0, 40.0, 40.0, 40.0, 40.0,                    # left arm (la1-la5)
+    40.0, 40.0, 40.0, 40.0, 40.0,                    # right arm (ra1-ra5)
+], dtype=np.float64)
+
+UPPER_BODY_KD = np.array([
+    4.0, 4.0,                                        # waist, head
+    4.0, 4.0, 4.0, 4.0, 4.0,                         # left arm (la1-la5)
+    4.0, 4.0, 4.0, 4.0, 4.0,                         # right arm (ra1-ra5)
+], dtype=np.float64)
 
 # Default PD gains
 DEFAULT_KP = np.array([
@@ -528,6 +562,25 @@ class MuJoCoDeploy:
             aid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
             assert aid >= 0, f"Actuator '{name}' not found in MJCF model"
             self.leg_actuator_ids.append(aid)
+        
+        # Resolve upper body joint and actuator indices
+        self.upper_joint_ids = []
+        for name in UPPER_BODY_JOINTS:
+            jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
+            assert jid >= 0, f"Upper body joint '{name}' not found in MJCF model"
+            self.upper_joint_ids.append(jid)
+
+        self.upper_actuator_ids = []
+        for name in UPPER_BODY_ACTUATORS:
+            aid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
+            assert aid >= 0, f"Upper body actuator '{name}' not found in MJCF model"
+            self.upper_actuator_ids.append(aid)
+
+        self.upper_qpos_addr = [self.model.jnt_qposadr[jid] for jid in self.upper_joint_ids]
+        self.upper_dof_addr = [self.model.jnt_dofadr[jid] for jid in self.upper_joint_ids]
+
+        self.upper_qpos_addr = [self.model.jnt_qposadr[jid] for jid in self.upper_joint_ids]
+        self.upper_dof_addr = [self.model.jnt_dofadr[jid] for jid in self.upper_joint_ids]
 
         self.leg_qpos_addr = [self.model.jnt_qposadr[jid] for jid in self.leg_joint_ids]
         self.leg_dof_addr = [self.model.jnt_dofadr[jid] for jid in self.leg_joint_ids]
@@ -570,6 +623,8 @@ class MuJoCoDeploy:
         self.data.qpos[4:7] = 0.0
         for i, addr in enumerate(self.leg_qpos_addr):
             self.data.qpos[addr] = self.default_joint_pos[i]
+        for i, addr in enumerate(self.upper_qpos_addr):
+            self.data.qpos[addr] = UPPER_BODY_DEFAULT_POS[i] if i < len(UPPER_BODY_DEFAULT_POS) else 0.0
         mujoco.mj_forward(self.model, self.data)
         self.last_action = np.zeros(12)
         self.sim_time = 0.0
@@ -583,6 +638,7 @@ class MuJoCoDeploy:
                 torques = np.clip(self.kp * (tgt - cp) - self.kd * cv, -self.effort_limits, self.effort_limits)
                 for i, act_id in enumerate(self.leg_actuator_ids):
                     self.data.ctrl[act_id] = torques[i]
+                self._apply_upper_body_hold()
                 mujoco.mj_step(self.model, self.data)
             self.sim_time += CONTROL_DT
             obs = self._build_obs_frame()
@@ -617,6 +673,17 @@ class MuJoCoDeploy:
         obs[idx:idx+2] = compute_gait_phase(self.sim_time, self.vel_cmd)
         idx += 2
         return obs
+    
+    def _apply_upper_body_hold(self):
+        """Apply gentle PD torques to hold upper body joints at default position."""
+        n = min(len(self.upper_qpos_addr), len(self.upper_actuator_ids), len(UPPER_BODY_DEFAULT_POS))
+        if n == 0:
+            return
+        up_pos = np.array([self.data.qpos[a] for a in self.upper_qpos_addr[:n]])
+        up_vel = np.array([self.data.qvel[a] for a in self.upper_dof_addr[:n]])
+        up_torques = UPPER_BODY_KP[:n] * (UPPER_BODY_DEFAULT_POS[:n] - up_pos) - UPPER_BODY_KD[:n] * up_vel
+        for i, act_id in enumerate(self.upper_actuator_ids[:n]):
+            self.data.ctrl[act_id] = up_torques[i]
 
     def step(self):
         import mujoco
@@ -633,6 +700,7 @@ class MuJoCoDeploy:
             )
             for i, act_id in enumerate(self.leg_actuator_ids):
                 self.data.ctrl[act_id] = torques[i]
+            self._apply_upper_body_hold()
             mujoco.mj_step(self.model, self.data)
         self.last_torques = torques.copy()
         self.sim_time += CONTROL_DT
