@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Training Log — 2026-05-09</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="training-log-2026-05-09">Training Log — 2026-05-09</h1>
+<hr>
+<h2 id="0220-orchestrator-pipeline-kvdb">[02:20] Orchestrator Pipeline 重启 + KVDB 修复</h2>
+<h3 id="_1">完成</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>项目</th>
+<th>详情</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>添加 <code>_wait_for_kit_cleanup()</code></td>
+<td><code>phase_orchestrator.py:556-584</code>，在子阶段之间等待 Kit 进程完全退出，防止 KVDB 锁冲突</td>
+</tr>
+<tr>
+<td>2</td>
+<td>在 <code>_advance()</code> 中调用清理</td>
+<td><code>phase_orchestrator.py:600</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>上传到 RTX + 验证 import</td>
+<td>scp + <code>python -c "from scripts.automation..."</code> OK</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Dry-run 验证</td>
+<td>12 个子阶段全部正确</td>
+</tr>
+<tr>
+<td>5</td>
+<td>首次启动 pipeline</td>
+<td>PID 1244556, 从 p3_coarse_v2 <code>model_10500.pt</code> (reward 37.38) 启动</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="0435-pipeline">[04:35] Pipeline 调试 + 僵尸进程清理</h2>
+<h3 id="bug">Bug 修复</h3>
+<table>
+<thead>
+<tr>
+<th>Bug</th>
+<th>原因</th>
+<th>修复</th>
+<th>文件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AttributeError: best_model_path</code></td>
+<td><code>_label_videos()</code> 用了错属性名</td>
+<td><code>best_model_path</code> → <code>best_checkpoint_path</code></td>
+<td><code>phase_orchestrator.py:934</code></td>
+</tr>
+<tr>
+<td><code>--fresh</code> 清空 history, checkpoint 解析失败</td>
+<td><code>_resolve_checkpoint()</code> 找不到上一个阶段的 best model</td>
+<td>手写 <code>orchestrator_state.json</code> 注入 p3_coarse_v2</td>
+<td>RTX <code>orchestrator_state.json</code></td>
+</tr>
+<tr>
+<td>旧 run 目录数据污染</td>
+<td>上次失败的 <code>2026-05-08_15-55-41_p3b_coarse</code> 仍匹配搜索</td>
+<td>归档为 <code>_archived_p3b_coarse_old</code></td>
+<td>RTX <code>logs/rsl_rl/</code></td>
+</tr>
+<tr>
+<td>run dir 4/8 min 超时</td>
+<td>Isaac Sim 4-GPU 初始化 10+ 分钟</td>
+<td><code>max_attempts = 28 if multi-gpu else 16</code></td>
+<td><code>phase_orchestrator.py:387</code></td>
+</tr>
+<tr>
+<td>多个 orchestrator 实例冲突</td>
+<td>旧 orchestrator 杀掉新 orchestrator 启动的训练</td>
+<td>显式 kill 旧 PID</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>.pyc</code> 缓存阻止代码更新</td>
+<td><code>__pycache__/</code> 旧字节码优先加载</td>
+<td>删除 <code>__pycache__/</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_2">僵尸进程清理</h3>
+<table>
+<thead>
+<tr>
+<th>进程</th>
+<th>PID</th>
+<th>问题</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>train_monitor.py</code></td>
+<td>198656</td>
+<td>运行 24h+，浪费资源</td>
+<td><code>kill -9</code></td>
+</tr>
+<tr>
+<td><code>omni.telemetry.transmitter</code></td>
+<td>1328209</td>
+<td>占用 GPU 4-7 各 ~1.9G</td>
+<td><code>kill -9</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="pipeline">重新启动 pipeline</h3>
+<ul>
+<li>Orchestrator PID 1365094, Training PID 1365095 (4 GPUs, torchrun)</li>
+<li>Run dir: <code>2026-05-09_03-22-15_p3b_coarse</code></li>
+<li>起始 checkpoint: p3_coarse_v2 <code>model_10500.pt</code> (reward 37.38)</li>
+</ul>
+<h3 id="_3">待完成</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>项目</th>
+<th>阻塞原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>p3b_coarse 训练中</td>
+<td>运行中，ETA ~8h</td>
+</tr>
+<tr>
+<td>2</td>
+<td>验证 KVDB 修复</td>
+<td>等 p3b_coarse → p3b_fine 转阶段</td>
+</tr>
+<tr>
+<td>3</td>
+<td>验证 <code>max_attempts=28</code> 生效</td>
+<td><code>.pyc</code> 缓存可能阻止了更新</td>
+</tr>
+<tr>
+<td>4</td>
+<td>后续阶段 p3b_fine → p4 → p5</td>
+<td>依赖 p3b_coarse 完成</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="2120-session-summary-orchestrator-p3b_fine-mujoco">[21:20] Session Summary — Orchestrator 修复 + p3b_fine MuJoCo 录制</h2>
+<h3 id="completed">Completed</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Training tail 检查 (×3)</td>
+<td><code>--tail --rtx</code> 三次快照: iter 12642→13335→14332, reward 1.35→10.84→7.80</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Bug fix: orchestrator 监控卡住</td>
+<td><strong>Root cause</strong>: orchestrator <code>training_run_dir</code> 指向旧 run (<code>2026-05-08_13-03-53_p4_coarse</code>)，新训练创建了新 run dir (<code>2026-05-09_09-50-46_p4_coarse</code>)，TensorBoard reader 无法找到新 events 文件 · <strong>Fix</strong>: kill 旧 orchestrator，用 python 修改 <code>orchestrator_state.json</code> 中 <code>training_run_dir</code> 指向新 run，重启 resume 模式 · <strong>Files</strong>: RTX <code>orchestrator_state.json</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>p3b_fine MuJoCo 视频录制</td>
+<td>4-GPU 4×4096 envs 并行录制, 500 步, 9 falls, 已下载 + label</td>
+</tr>
+<tr>
+<td>4</td>
+<td>p3b_fine params 下载</td>
+<td><code>scp -r params/</code> 到 <code>videos/p/p3b_fine/params/</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="uncompleted-blocked">Uncompleted / Blocked</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Blocker</th>
+<th>Next Step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>p4_coarse 训练进行中</td>
+<td>iter 14332/35800 (40%), ETA ~18h</td>
+<td>等 pipeline 自动推进</td>
+</tr>
+<tr>
+<td>2</td>
+<td>MuJoCo 地形适配讨论</td>
+<td>MuJoCo MJCF 只有 <code>type="plane"</code>, 无法还原 Isaac Sim 粗糙地形</td>
+<td>可在 MJCF 加 hfield 或用 Isaac Sim 验证</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-decisions">Key Decisions</h3>
+<ul>
+<li>Orchestrator 状态文件修复: 直接 JSON 编辑 <code>training_run_dir</code> 字段，避免重新跑整个 pipeline</li>
+<li>p3b_fine MuJoCo 录制: 9 falls 反映 sim-to-sim gap (粗糙地形策略在平地表现不佳)</li>
+<li>MuJoCo 地形: 确认为纯平面 <code>type="plane"</code>，非物理粗糙，适合验证平地策略</li>
+</ul>
+<hr>
+<h2 id="2125-mujoco">[21:25] MuJoCo 地形适配方案 — 各阶段对照表</h2>
+<h3 id="isaac-sim-vs-mujoco">Isaac Sim vs MuJoCo 地形对照</h3>
+<p>当前 MJCF (<code>MAGICBOTZ1.xml</code>) 只有一个 <code>&lt;geom type="plane"&gt;</code>，完全平坦。
+以下是根据 <code>z1_5phase_plan.yaml</code> 各阶段地形配置，MuJoCo 对应的设置方案：</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Isaac Sim 地形类型</th>
+<th>sub_terrains 组成</th>
+<th>MuJoCo 方案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>p1</strong></td>
+<td><code>plane</code> (无 generator)</td>
+<td>纯平地</td>
+<td><code>&lt;geom type="plane"&gt;</code> (当前默认，无需改动)</td>
+</tr>
+<tr>
+<td><strong>p2</strong></td>
+<td><code>plane</code> (无 generator)</td>
+<td>纯平地</td>
+<td><code>&lt;geom type="plane"&gt;</code> (当前默认，无需改动)</td>
+</tr>
+<tr>
+<td><strong>p3</strong></td>
+<td><code>generator</code> (gentle)</td>
+<td>flat 70% + random_grid 30% (difficulty 0.0-0.5)</td>
+<td><code>&lt;hfield&gt;</code> 低幅起伏，振幅 ~5mm (vertical_scale=0.005)</td>
+</tr>
+<tr>
+<td><strong>p3b</strong></td>
+<td><code>generator</code> (intermediate)</td>
+<td>flat 50% + random_grid 30% (0.0-0.6) + stairs 10% (0.0-0.4) + boxes 10% (0.0-0.4)</td>
+<td><code>&lt;hfield&gt;</code> + 散布 <code>&lt;box&gt;</code> 台阶/障碍物</td>
+</tr>
+<tr>
+<td><strong>p4</strong></td>
+<td><code>generator</code> (rough)</td>
+<td>flat 30% + random_grid 30% (0.0-0.7) + stairs 20% (0.0-0.6) + gap 10% (0.0-0.5) + boxes 10% (0.0-0.5)</td>
+<td><code>&lt;hfield&gt;</code> 较强起伏 + <code>&lt;box&gt;</code> 台阶 + 地面缺口</td>
+</tr>
+<tr>
+<td><strong>p5</strong></td>
+<td><code>generator</code> (full)</td>
+<td>flat 20% + random_grid 20% (0.0-0.7) + stairs 20% (0.0-0.6) + gap 20% (0.0-0.5) + boxes 20% (0.0-0.5)</td>
+<td><code>&lt;hfield&gt;</code> 高起伏 + 密集 <code>&lt;box&gt;</code> + 多段缺口</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mujoco">MuJoCo 地形实现方式</h3>
+<h4 id="1-flat-p1-p2">1. Flat (p1, p2) — 当前已有</h4>
+<pre><code class="language-xml">&lt;!-- 当前 MAGICBOTZ1.xml 默认 --&gt;
+&lt;geom name=&quot;ground&quot; type=&quot;plane&quot; pos=&quot;0 0 0&quot; friction=&quot;1 1 5&quot;
+      size=&quot;10 10 1&quot; conaffinity=&quot;1&quot; contype=&quot;1&quot; material=&quot;MatGnd&quot;/&gt;
+</code></pre>
+<h4 id="2-gentle-bumps-p3-hfield">2. Gentle Bumps (p3) — hfield 低幅起伏</h4>
+<pre><code class="language-xml">&lt;asset&gt;
+  &lt;!-- 9x21 网格，匹配 Isaac Sim 的 num_rows=9, num_cols=21 --&gt;
+  &lt;!-- size: x_half=4.0 y_half=4.0 base_z=0 max_elevation=0.01 (约2倍 vertical_scale) --&gt;
+  &lt;hfield name=&quot;gentle_terrain&quot; nrow=&quot;9&quot; ncol=&quot;21&quot;
+          size=&quot;4 4 0 0.01&quot; file=&quot;gentle_terrain.png&quot;/&gt;
+  &lt;!-- 需要生成 heightmap PNG: 白色=最高(0.01m), 黑色=最低(0m) --&gt;
+  &lt;!-- 可从 Isaac Sim 导出 heightmap 数据 --&gt;
+&lt;/asset&gt;
+
+&lt;worldbody&gt;
+  &lt;!-- 替换原来的 plane --&gt;
+  &lt;geom name=&quot;ground&quot; type=&quot;hfield&quot; hfield=&quot;gentle_terrain&quot;
+        pos=&quot;0 0 0&quot; friction=&quot;1 1 5&quot; conaffinity=&quot;1&quot; contype=&quot;1&quot;/&gt;
+&lt;/worldbody&gt;
+</code></pre>
+<p><strong>p3 地形参数映射：</strong>
+- <code>horizontal_scale: 0.1</code> → MuJoCo 每个 hfield 格子 ~0.1m
+- <code>vertical_scale: 0.005</code> → 最大高度变化 ~5mm（gentle）
+- <code>difficulty_range: [0.0, 0.5]</code> → hfield 振幅约 0-2.5mm</p>
+<h4 id="3-intermediate-p3b-hfield">3. Intermediate (p3b) — hfield + 障碍物</h4>
+<pre><code class="language-xml">&lt;asset&gt;
+  &lt;hfield name=&quot;intermediate_terrain&quot; nrow=&quot;9&quot; ncol=&quot;21&quot;
+          size=&quot;4 4 0 0.015&quot; file=&quot;intermediate_terrain.png&quot;/&gt;
+&lt;/asset&gt;
+
+&lt;worldbody&gt;
+  &lt;geom name=&quot;ground&quot; type=&quot;hfield&quot; hfield=&quot;intermediate_terrain&quot;
+        pos=&quot;0 0 0&quot; friction=&quot;1 1 5&quot; conaffinity=&quot;1&quot; contype=&quot;1&quot;/&gt;
+
+  &lt;!-- Stairs: 台阶 (p3b stairs 10%, difficulty 0.0-0.4) --&gt;
+  &lt;geom name=&quot;stair1&quot; type=&quot;box&quot; size=&quot;0.5 0.5 0.02&quot; pos=&quot;2 0 0.02&quot;
+        friction=&quot;1 1 5&quot; conaffinity=&quot;1&quot; contype=&quot;1&quot; rgba=&quot;0.6 0.5 0.4 1&quot;/&gt;
+  &lt;geom name=&quot;stair2&quot; type=&quot;box&quot; size=&quot;0.5 0.5 0.04&quot; pos=&quot;2 1 0.04&quot;
+        friction=&quot;1 1 5&quot; conaffinity=&quot;1&quot; contype=&quot;1&quot; rgba=&quot;0.6 0.5 0.4 1&quot;/&gt;
+
+  &lt;!-- Boxes: 障碍方块 (p3b boxes 10%, difficulty 0.0-0.4) --&gt;
+  &lt;geom name=&quot;box1&quot; type=&quot;box&quot; size=&quot;0.1 0.1 0.03&quot; pos=&quot;-1 1.5 0.03&quot;
+        friction=&quot;1 1 5&quot; conaffinity=&quot;1&quot; contype=&quot;1&quot; rgba=&quot;0.5 0.5 0.5 1&quot;/&gt;
+&lt;/worldbody&gt;
+</code></pre>
+<h4 id="4-rough-p4-hfield">4. Rough (p4) — 强 hfield + 台阶 + 缺口</h4>
+<pre><code class="language-xml">&lt;asset&gt;
+  &lt;hfield name=&quot;rough_terrain&quot; nrow=&quot;9&quot; ncol=&quot;21&quot;
+          size=&quot;4 4 0 0.025&quot; file=&quot;rough_terrain.png&quot;/&gt;
+&lt;/asset&gt;
+
+&lt;worldbody&gt;
+  &lt;geom name=&quot;ground&quot; type=&quot;hfield&quot; hfield=&quot;rough_terrain&quot;
+        pos=&quot;0 0 0&quot; friction=&quot;1 1 5&quot; conaffinity=&quot;1&quot; contype=&quot;1&quot;/&gt;
+
+  &lt;!-- Stairs: 更多更高 (p4 stairs 20%, difficulty 0.0-0.6) --&gt;
+  &lt;geom name=&quot;stair1&quot; type=&quot;box&quot; size=&quot;0.5 0.5 0.03&quot; pos=&quot;2 0 0.03&quot; .../&gt;
+  &lt;geom name=&quot;stair2&quot; type=&quot;box&quot; size=&quot;0.5 0.5 0.06&quot; pos=&quot;2 1 0.06&quot; .../&gt;
+  &lt;geom name=&quot;stair3&quot; type=&quot;box&quot; size=&quot;0.5 0.5 0.09&quot; pos=&quot;2 2 0.09&quot; .../&gt;
+
+  &lt;!-- Gap: 地面缺口 (p4 gap 10%, difficulty 0.0-0.5) --&gt;
+  &lt;!-- 用多段 plane 实现，中间留空 --&gt;
+  &lt;geom name=&quot;ground_a&quot; type=&quot;plane&quot; pos=&quot;-3 0 -0.001&quot;
+        size=&quot;2 5 0.1&quot; friction=&quot;1 1 5&quot; conaffinity=&quot;1&quot; contype=&quot;1&quot;/&gt;
+  &lt;!-- gap here: x ∈ [-1, -0.5] --&gt;
+  &lt;geom name=&quot;ground_b&quot; type=&quot;plane&quot; pos=&quot;2 0 -0.001&quot;
+        size=&quot;2 5 0.1&quot; friction=&quot;1 1 5&quot; conaffinity=&quot;1&quot; contype=&quot;1&quot;/&gt;
+&lt;/worldbody&gt;
+</code></pre>
+<h4 id="5-full-p5">5. Full (p5) — 最复杂地形</h4>
+<pre><code class="language-xml">&lt;asset&gt;
+  &lt;hfield name=&quot;full_terrain&quot; nrow=&quot;9&quot; ncol=&quot;21&quot;
+          size=&quot;4 4 0 0.035&quot; file=&quot;full_terrain.png&quot;/&gt;
+&lt;/asset&gt;
+
+&lt;worldbody&gt;
+  &lt;geom name=&quot;ground&quot; type=&quot;hfield&quot; hfield=&quot;full_terrain&quot; .../&gt;
+
+  &lt;!-- 密集障碍物: stairs 20% + boxes 20% + gaps 20% --&gt;
+  &lt;!-- 需要程序化生成大量 geom --&gt;
+&lt;/worldbody&gt;
+</code></pre>
+<h3 id="_4">关键参数对照</h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>Isaac Sim</th>
+<th>MuJoCo 对应</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>horizontal_scale: 0.1</code></td>
+<td>每格 0.1m</td>
+<td>hfield <code>nrow×ncol</code> 覆盖 <code>size</code> 区域</td>
+</tr>
+<tr>
+<td><code>vertical_scale: 0.005</code></td>
+<td>最大高度 5mm</td>
+<td>hfield 第5个参数 <code>max_elevation</code></td>
+</tr>
+<tr>
+<td><code>difficulty_range</code></td>
+<td>控制地形复杂度</td>
+<td>影响 hfield 振幅和障碍物密度</td>
+</tr>
+<tr>
+<td><code>proportion</code></td>
+<td>每种地形占比</td>
+<td>通过 hfield 数据 + 额外 geom 比例模拟</td>
+</tr>
+</tbody>
+</table>
+<h3 id="heightmap">Heightmap 生成方案</h3>
+<p>hfield 数据需要从 Isaac Sim 导出或用 Python 程序化生成：</p>
+<pre><code class="language-python"># 方案 A: 从 Isaac Sim 导出
+# 在 Isaac Sim 中生成地形后，导出 heightmap 为 PNG
+# MuJoCo hfield 支持 PNG 格式 (灰度图)
+
+# 方案 B: Python 程序化生成
+import numpy as np
+from PIL import Image
+
+nrow, ncol = 9, 21
+difficulty = 0.5  # 对应 p3_fine 的 max difficulty
+
+# 随机起伏
+hmap = np.random.rand(nrow, ncol) * difficulty
+# 平滑处理 (模拟 gentle terrain)
+from scipy.ndimage import gaussian_filter
+hmap = gaussian_filter(hmap, sigma=1.5)
+
+# 归一化到 0-255
+hmap_img = (hmap / hmap.max() * 255).astype(np.uint8)
+Image.fromarray(hmap_img).save(&quot;gentle_terrain.png&quot;)
+</code></pre>
+<h3 id="_5">总结</h3>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>MuJoCo 需要改动?</th>
+<th>改动量</th>
+<th>优先级</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>p1</td>
+<td>不需要</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>p2</td>
+<td>不需要</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>p3</td>
+<td>需要 hfield</td>
+<td>小 (仅替换 ground geom)</td>
+<td>中</td>
+</tr>
+<tr>
+<td>p3b</td>
+<td>需要 hfield + 几个 box</td>
+<td>中</td>
+<td>中</td>
+</tr>
+<tr>
+<td>p4</td>
+<td>需要 hfield + 多个 box + gap</td>
+<td>大</td>
+<td>高</td>
+</tr>
+<tr>
+<td>p5</td>
+<td>需要 hfield + 大量 box + gap</td>
+<td>大</td>
+<td>高</td>
+</tr>
+</tbody>
+</table>
+    <footer>Generated from training_log_2026-05-09.md</footer>
+  </main>
+</body>
+</html>

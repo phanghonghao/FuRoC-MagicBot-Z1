@@ -203,16 +203,9 @@ def parse_args():
     parser.add_argument("--deploy_cfg", type=str, default=None, help="Path to deploy.yaml (optional)")
     parser.add_argument("--manual", action="store_true", help="Manual joint control mode (no policy)")
     parser.add_argument("--onnx", action="store_true", help="Use ONNX model instead of JIT")
-    parser.add_argument("--vel_x", type=float, default=0.5, help="Forward velocity command (m/s)")
+    parser.add_argument("--vel_x", type=float, default=0.3, help="Forward velocity command (m/s)")
     parser.add_argument("--vel_y", type=float, default=0.0, help="Lateral velocity command (m/s)")
     parser.add_argument("--vel_yaw", type=float, default=0.0, help="Yaw velocity command (rad/s)")
-    parser.add_argument("--vel_sweep", action="store_true",
-                        help="Sweep vel_x from --vel_min to --vel_max, test each velocity level")
-    parser.add_argument("--vel_min", type=float, default=0.0, help="Sweep start velocity (m/s)")
-    parser.add_argument("--vel_max", type=float, default=1.0, help="Sweep end velocity (m/s)")
-    parser.add_argument("--vel_step", type=float, default=0.1, help="Sweep velocity increment (m/s)")
-    parser.add_argument("--steps_per_vel", type=int, default=200,
-                        help="Steps per velocity level in sweep mode (default: 200 = 4s @50Hz)")
     parser.add_argument("--keyboard", action="store_true", help="Use keyboard for velocity commands")
     parser.add_argument("--num_steps", type=int, default=10000, help="Number of control steps")
     parser.add_argument("--terrain_difficulty", type=float, default=None,
@@ -740,26 +733,6 @@ def main():
         print(f"[INFO] Loaded policy from {args.policy} (ONNX={args.onnx})")
 
     vel_cmd = [args.vel_x, args.vel_y, args.vel_yaw]
-
-    # Velocity sweep setup
-    vel_sweep = args.vel_sweep
-    vel_stable_max = None
-    sweep_results = []  # per-velocity results
-
-    if vel_sweep and not (args.keyboard or args.manual):
-        vel_levels = list(np.arange(args.vel_min, args.vel_max + args.vel_step / 2, args.vel_step))
-        steps_per_vel = args.steps_per_vel
-        total_sweep_steps = len(vel_levels) * steps_per_vel
-        vel_cmd[0] = vel_levels[0]
-        print(f"[INFO] Velocity sweep: {len(vel_levels)} levels × {steps_per_vel} steps "
-              f"({vel_levels[0]:.1f} → {vel_levels[-1]:.1f} m/s, "
-              f"{total_sweep_steps} total steps = {total_sweep_steps * CONTROL_DT:.0f}s)")
-    else:
-        vel_levels = None
-        steps_per_vel = None
-        total_sweep_steps = None
-        vel_cmd[0] = args.vel_x
-
     kb_controller = None
     if args.keyboard or args.manual:
         kb_controller = KeyboardController(
@@ -859,21 +832,9 @@ def main():
             viewer = None
 
     fall_count = 0
-    num_total = total_sweep_steps if vel_sweep and vel_levels else args.num_steps
-    print(f"[INFO] Running {num_total} steps...")
+    print(f"[INFO] Running {args.num_steps} steps...")
     try:
-        for step in range(num_total):
-
-            # ── Sweep: velocity transition ──
-            if vel_sweep and vel_levels:
-                vel_idx = step // steps_per_vel
-                local_step = step % steps_per_vel
-                if local_step == 0:
-                    # Start of a new velocity level
-                    env.vel_cmd[0] = vel_levels[vel_idx]
-                    env.reset()
-                    current_vel_x_start = env.get_robot_state()['x']
-                    current_vel_falls = 0
+        for step in range(args.num_steps):
             if kb_controller:
                 kb_controller.update()
                 if not kb_controller.running:
@@ -904,11 +865,7 @@ def main():
             else:
                 fell = env.step()
                 if fell:
-                    if vel_sweep and vel_levels:
-                        env.reset()
-                        current_vel_falls += 1
-                    else:
-                        env.reset()
+                    env.reset()
                     fall_count += 1
 
             if csv_writer:
@@ -949,24 +906,6 @@ def main():
                     print(f"  Step {step:5d} | t={state['time']:.1f}s | "
                           f"pos=({state['x']:.2f}, {state['y']:.2f}, {state['z']:.2f}) | "
                           f"{vel_cmd_str} | falls={fall_count}")
-
-            # ── Sweep: end of velocity level ──
-            if vel_sweep and vel_levels:
-                vel_idx = step // steps_per_vel
-                local_step = step % steps_per_vel
-                if local_step == steps_per_vel - 1:
-                    # Last step of this velocity level — record results
-                    state = env.get_robot_state()
-                    x_delta = state['x'] - current_vel_x_start
-                    vel = vel_levels[vel_idx]
-                    sweep_results.append({
-                        "velocity": round(vel, 2),
-                        "falls": current_vel_falls,
-                        "x_displacement": round(x_delta, 3),
-                    })
-                    tag = "STABLE" if current_vel_falls == 0 else f"{current_vel_falls} fall{'s' if current_vel_falls > 1 else ''}"
-                    print(f"  [SWEEP] {vel:.1f} m/s: {tag}, Δx={x_delta:+.2f}m")
-
             if viewer and not args.record:
                 time.sleep(max(0, CONTROL_DT - 0.001))
 
@@ -979,30 +918,6 @@ def main():
         imageio.mimwrite(args.record, frames, fps=int(1.0 / CONTROL_DT))
         sz = os.path.getsize(args.record) / (1024 * 1024)
         print(f"[INFO] Done! {args.record} ({sz:.1f} MB), Falls: {fall_count}")
-
-        # Save sweep metadata alongside video
-        if vel_sweep and sweep_results:
-            import json
-            meta_path = args.record.rsplit('.', 1)[0] + '_sweep.json'
-            stable_max = max(
-                (r["velocity"] for r in sweep_results if r["falls"] == 0),
-                default=None,
-            )
-            sweep_metadata = {
-                "vel_min": args.vel_min,
-                "vel_max": args.vel_max,
-                "vel_step": args.vel_step,
-                "steps_per_vel": steps_per_vel,
-                "vel_stable_max": stable_max,
-                "total_falls": fall_count,
-                "total_steps": len(frames),
-                "per_velocity": sweep_results,
-            }
-            with open(meta_path, 'w') as f:
-                json.dump(sweep_metadata, f, indent=2)
-            print(f"[INFO] Sweep summary: stable_max={stable_max} m/s, "
-                  f"total_falls={fall_count}")
-            print(f"[INFO] Saved: {meta_path}")
 
     if viewer is not None:
         try:

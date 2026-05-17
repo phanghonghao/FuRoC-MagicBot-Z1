@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Z1 12DOF Training Log</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="z1-12dof-training-log">Z1 12DOF Training Log</h1>
+<blockquote>
+<p>RTX 6000D Server | phh@192.168.120.155 | Server timezone: UTC (+0)
+All timestamps below: <strong>CST (GMT+8)</strong></p>
+</blockquote>
+<hr>
+<h2 id="run-1-5-phase-pipeline-2026-05-06-2026-05-07">Run 1: 5-Phase Pipeline (2026-05-06 ~ 2026-05-07)</h2>
+<p><strong>Plan:</strong> <code>training_plans/z1_5phase_plan.yaml</code>
+<strong>GPU:</strong> 4x RTX 6000D (torchrun, port 29502)
+<strong>num_envs:</strong> 4096/GPU</p>
+<h3 id="timeline-cst">Timeline (CST)</h3>
+<table>
+<thead>
+<tr>
+<th>Time</th>
+<th>Event</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>05/06 23:47</td>
+<td>Pipeline 启动, p1_coarse 开始</td>
+</tr>
+<tr>
+<td>05/07 00:56</td>
+<td>p1_coarse 完成 (best: model_2900)</td>
+</tr>
+<tr>
+<td>05/07 01:40</td>
+<td>p1_fine 开始</td>
+</tr>
+<tr>
+<td>05/07 01:44</td>
+<td>p1_fine 完成 (best: model_2800)</td>
+</tr>
+<tr>
+<td>05/07 01:51</td>
+<td>p2_coarse attempt 1 — torchrun 启动</td>
+</tr>
+<tr>
+<td>05/07 01:55</td>
+<td>p2_coarse attempt 1 — 4min 超时, 放弃 (<strong>未 kill 进程</strong>)</td>
+</tr>
+<tr>
+<td>05/07 01:59</td>
+<td>p2_coarse attempt 2 — 又一个 torchrun 抢同一端口+GPU</td>
+</tr>
+<tr>
+<td>05/07 02:03</td>
+<td>p2_coarse attempt 2 — 超时</td>
+</tr>
+<tr>
+<td>05/07 02:07</td>
+<td>p2_coarse attempt 3 — 第三个 torchrun</td>
+</tr>
+<tr>
+<td>05/07 02:11</td>
+<td>p2_coarse attempt 3 — 超时</td>
+</tr>
+<tr>
+<td>05/07 02:13</td>
+<td>Pipeline 停止 (3 个 zombie torchrun 仍在运行)</td>
+</tr>
+<tr>
+<td>05/07 02:49</td>
+<td>p2_coarse 训练实际开始 (zombie 抢到 GPU)</td>
+</tr>
+<tr>
+<td>05/07 03:27</td>
+<td>p2_coarse 最后 checkpoint model_3900</td>
+</tr>
+<tr>
+<td>05/07 03:33</td>
+<td>p2_fine 启动</td>
+</tr>
+<tr>
+<td>05/07 ~04:00</td>
+<td>p2_fine 被 kill (signal 15)</td>
+</tr>
+<tr>
+<td>05/07 ~04:14</td>
+<td>p3_coarse 启动, 也被 kill</td>
+</tr>
+</tbody>
+</table>
+<h3 id="sub-phase-details">Sub-phase Details</h3>
+<h4 id="p1-flat-bootstrap">P1: Flat — Bootstrap</h4>
+<p><strong>p1_coarse</strong> (<code>2026-05-06_15-47-12_p1_coarse</code>)
+- Iterations: 0 → 6 / 5000 (pipeline 提前终止)
+- Reward: -0.43 → -0.41
+- Best: model_2900.pt
+- Status: COMPLETED (pipeline 判定收敛)</p>
+<p><strong>p1_fine</strong> (<code>2026-05-06_17-40-13_p1_fine</code>)
+- Iterations: 2700 → 2885 / 7700
+- Reward: ? → 2.90
+- Speed: ~209k steps/s, 1.85s/iter
+- Metrics:</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mean_reward</td>
+<td>2.90</td>
+</tr>
+<tr>
+<td>episode_length</td>
+<td>950.6</td>
+</tr>
+<tr>
+<td>time_out</td>
+<td>92.9%</td>
+</tr>
+<tr>
+<td>bad_orientation</td>
+<td>7.1%</td>
+</tr>
+<tr>
+<td>error_vel_xy</td>
+<td>0.414</td>
+</tr>
+<tr>
+<td>error_vel_yaw</td>
+<td>0.879</td>
+</tr>
+<tr>
+<td>action_noise_std</td>
+<td>0.40</td>
+</tr>
+<tr>
+<td>lin_vel_cmd</td>
+<td>0.10</td>
+</tr>
+<tr>
+<td>ang_vel_cmd</td>
+<td>0.10</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Best: model_2800.pt</li>
+<li>Status: COMPLETED</li>
+</ul>
+<h4 id="p2-flat-velocity-tracking">P2: Flat — Velocity Tracking</h4>
+<p><strong>p2_coarse</strong> (<code>2026-05-06_18-49-40_p2_coarse</code>) — <em>Pipeline 失控后 zombie 进程自行运行</em>
+- Iterations: 2800 → 3929 / 12800
+- Reward: -0.81 → 33.02
+- Speed: ~198k steps/s, 2.01s/iter
+- Elapsed: 37m50s
+- Checkpoints: 12 files (model_2800 ~ model_3900)</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Start</th>
+<th>End</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mean_reward</td>
+<td>-0.81</td>
+<td>33.02</td>
+</tr>
+<tr>
+<td>episode_length</td>
+<td>?</td>
+<td>980.4</td>
+</tr>
+<tr>
+<td>time_out</td>
+<td>?</td>
+<td>97.4%</td>
+</tr>
+<tr>
+<td>bad_orientation</td>
+<td>?</td>
+<td>2.6%</td>
+</tr>
+<tr>
+<td>error_vel_xy</td>
+<td>?</td>
+<td>0.340</td>
+</tr>
+<tr>
+<td>error_vel_yaw</td>
+<td>?</td>
+<td>0.749</td>
+</tr>
+<tr>
+<td>action_noise_std</td>
+<td>?</td>
+<td>0.60</td>
+</tr>
+<tr>
+<td>lin_vel_cmd</td>
+<td>?</td>
+<td>1.00</td>
+</tr>
+<tr>
+<td>ang_vel_cmd</td>
+<td>?</td>
+<td>0.30</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Best: model_3900.pt (last saved)</li>
+<li>Status: KILLED (signal 15)</li>
+</ul>
+<p><strong>p2_fine</strong> (<code>2026-05-06_19-33-51_p2_fine</code>) — <em>非 pipeline 控制</em>
+- Iterations: 2900 → 3667 / 12900
+- Reward: -0.50 → 38.32
+- Speed: ~? steps/s, 2.01s/iter
+- Elapsed: 25m54s
+- Checkpoints: 8 files</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mean_reward</td>
+<td>38.32</td>
+</tr>
+<tr>
+<td>time_out</td>
+<td>97.0%</td>
+</tr>
+<tr>
+<td>bad_orientation</td>
+<td>3.0%</td>
+</tr>
+<tr>
+<td>error_vel_xy</td>
+<td>?</td>
+</tr>
+<tr>
+<td>error_vel_yaw</td>
+<td>0.784</td>
+</tr>
+<tr>
+<td>action_noise_std</td>
+<td>?</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Best: model_3600.pt (last saved)</li>
+<li>Status: KILLED (signal 15)</li>
+</ul>
+<h3 id="pipeline-failure-root-cause">Pipeline Failure Root Cause</h3>
+<ol>
+<li><strong>Orchestrator retry 时未 kill 前一个 torchrun</strong> — 3 个进程争抢 GPU 和 port 29502</li>
+<li><strong>4 分钟 run directory 等待超时太短</strong> — 多 GPU Isaac Sim 初始化慢, 加上 zombie 进程抢资源</li>
+<li><strong>所有 retry 写入同一 log 文件</strong> — <code>train_p2_coarse.log</code> 被覆盖</li>
+</ol>
+<h3 id="current-state">Current State</h3>
+<ul>
+<li>Pipeline: STOPPED</li>
+<li>训练进程: 无 (所有进程已死亡)</li>
+<li>State file: <code>orchestrator_state.json</code> (停在 p2_coarse, pending)</li>
+<li>最佳 checkpoint: p2_fine/model_3600.pt (reward: 38.32)</li>
+</ul>
+<hr>
+<h2 id="bugfix-retry-zombie-kill-logic-2026-05-07">Bugfix: Retry Zombie Kill Logic (2026-05-07)</h2>
+<p><strong>文件</strong>: <code>scripts/automation/phase_orchestrator.py</code></p>
+<h3 id="fix-a-_start_sub_phase-run_dir-kill">Fix A: <code>_start_sub_phase()</code> — run_dir 找不到时 kill 进程</h3>
+<ul>
+<li><strong>问题</strong>: run directory 等待超时后直接 return，torchrun 变 zombie</li>
+<li><strong>修复</strong>: return 前 <code>graceful_stop(self._proc.pid)</code> + 清除 <code>self._proc</code></li>
+</ul>
+<h3 id="fix-b-_handle_failure-retry-kill">Fix B: <code>_handle_failure()</code> — retry 前 kill 旧进程</h3>
+<ul>
+<li><strong>问题</strong>: retry 时直接 reset state，未 kill 前一个 torchrun，导致多个进程争抢 GPU</li>
+<li><strong>修复</strong>: <code>retry_count += 1</code> 前检查 <code>training_pid</code> 是否存活，存活则 <code>graceful_stop</code></li>
+</ul>
+<h3 id="fix-c-config_generatorpy-meshrandomgridterraincfg">Fix C: <code>config_generator.py</code> — MeshRandomGridTerrainCfg 参数映射</h3>
+<ul>
+<li><strong>问题1</strong>: <code>RandomGridTerrainCfg</code> 在新版 IsaacLab 已重命名为 <code>MeshRandomGridTerrainCfg</code></li>
+<li><strong>问题2</strong>: 新 API 不接受 <code>difficulty_range</code>，需要 <code>grid_width</code> + <code>grid_height_range</code></li>
+<li><strong>问题3</strong>: <code>grid_width=0.5</code> 整除 terrain size 8.0 导致 border_width=0</li>
+<li><strong>修复</strong>: config_generator 对 <code>RandomGridTerrainCfg</code> 做参数转换: <code>difficulty_range</code> → <code>grid_height_range</code>, <code>grid_width=0.6</code></li>
+</ul>
+<hr>
+<h2 id="pipeline-resume-p2_coarse-2026-05-07">Pipeline Resume: p2_coarse (2026-05-07)</h2>
+<table>
+<thead>
+<tr>
+<th>Time</th>
+<th>Event</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>05/07 ~10:30</td>
+<td>Orchestrator bugfix 部署</td>
+</tr>
+<tr>
+<td>05/07 ~10:35</td>
+<td><code>--start-from p2_coarse --fresh</code> 启动 pipeline (PID=2901187)</td>
+</tr>
+<tr>
+<td>05/07 ~10:37</td>
+<td>p2_coarse: 找到旧 zombie 数据, overfitting 判定, 跳过</td>
+</tr>
+<tr>
+<td>05/07 ~10:44</td>
+<td>p2_fine: 同上, 旧 zombie 数据, 跳过</td>
+</tr>
+<tr>
+<td>05/07 ~10:49</td>
+<td>p2 COMPLETE, 推进到 p3_coarse</td>
+</tr>
+<tr>
+<td>05/07 ~10:53</td>
+<td>p3_coarse 失败: <code>RandomGridTerrainCfg</code> 不存在 → 修复 config_generator</td>
+</tr>
+<tr>
+<td>05/07 ~11:02</td>
+<td>p3_coarse 失败: <code>difficulty_range</code> 参数不匹配 → 修复参数映射</td>
+</tr>
+<tr>
+<td>05/07 ~11:10</td>
+<td>p3_coarse 失败: <code>grid_width=0.5</code> 整除 terrain size → 改为 0.6</td>
+</tr>
+<tr>
+<td>05/07 ~11:56</td>
+<td><strong>p3_coarse 成功启动</strong> (PID=2966244, run_dir=<code>2026-05-07_03-56-16_p3_coarse</code>)</td>
+</tr>
+<tr>
+<td>05/07 ~11:59</td>
+<td>验证: iter=65, reward=4.23, HEALTHY, GPU 0-3 ~50% 利用率</td>
+</tr>
+</tbody>
+</table>
+<p><strong>命令</strong>:</p>
+<pre><code class="language-bash">rm -f orchestrator_state.json &amp;&amp; \
+nohup python -u scripts/automation/phase_orchestrator.py \
+  --plan training_plans/z1_5phase_plan.yaml \
+  --start-from p3_coarse --fresh --num-gpus 4 --poll-interval 120 \
+  &gt; /tmp/z1_5phase_pipeline.log 2&gt;&amp;1 &amp; echo PID=$!
+</code></pre>
+<p><strong>状态</strong>: p3_coarse 训练中 (reward 4.23, HEALTHY)</p>
+<hr>
+<h2 id="isaac-sim-2026-05-07">Isaac Sim 视频录制失败分析 (2026-05-07)</h2>
+<h3 id="_1">目标</h3>
+<p>为 p1/p2 阶段的 best model 补录 Isaac Lab 视频 (共 4 个):</p>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>Checkpoint</th>
+<th>Reward</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>p1_coarse</td>
+<td>model_2700.pt</td>
+<td>~15.61 (peak@2690)</td>
+</tr>
+<tr>
+<td>p1_fine</td>
+<td>model_2800.pt</td>
+<td>2.90</td>
+</tr>
+<tr>
+<td>p2_coarse</td>
+<td>model_2900.pt</td>
+<td>~42.68 (peak, zombie data)</td>
+</tr>
+<tr>
+<td>p2_fine</td>
+<td>model_3200.pt</td>
+<td>~48.30 (best@3168, zombie data)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_2">结果</h3>
+<table>
+<thead>
+<tr>
+<th>视频</th>
+<th>状态</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>p1_coarse</td>
+<td><strong>成功</strong> (200帧, 20MB)</td>
+<td>旧进程在训练前碰巧完成</td>
+</tr>
+<tr>
+<td>p1_fine</td>
+<td>失败</td>
+<td>进程静默死亡</td>
+</tr>
+<tr>
+<td>p2_coarse</td>
+<td>失败</td>
+<td>进程静默死亡</td>
+</tr>
+<tr>
+<td>p2_fine</td>
+<td>失败</td>
+<td>进程静默死亡</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_3">失败原因</h3>
+<p><strong>Isaac Sim 渲染管线会占用全部 8 块 GPU 显存，不受 <code>--device cuda:N</code> 限制。</strong></p>
+<ul>
+<li><code>--device cuda:N</code> 只控制 PyTorch 计算的 GPU，Isaac Sim 的 Omniverse Kit 渲染引擎会初始化所有可见 GPU</li>
+<li>p3_coarse 训练 (GPU 0-3) 本身是 1 个 Isaac Sim 实例</li>
+<li>每个录制进程也是独立的 Isaac Sim 实例，会在全部 8 块 GPU 上分配渲染资源</li>
+<li>多个 Isaac Sim 实例并发 → GPU 显存/渲染资源争抢 → 进程在渲染初始化阶段被静默杀死</li>
+</ul>
+<h3 id="_4">验证过程</h3>
+<table>
+<thead>
+<tr>
+<th>尝试</th>
+<th>方式</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CUDA_VISIBLE_DEVICES=4</code></td>
+<td>限制 GPU 可见性</td>
+<td>Isaac Sim 报 "Skipping NVIDIA GPU due CUDA being in bad state"</td>
+</tr>
+<tr>
+<td><code>--device cuda:4</code> (单录制)</td>
+<td>不设环境变量</td>
+<td>卡在 <code>getBypassRenderSkelMeshProcessing</code> 后死亡</td>
+</tr>
+<tr>
+<td><code>--device cuda:4/6/7</code> (3 并发)</td>
+<td>不同 GPU 分别录制</td>
+<td>全部静默死亡</td>
+</tr>
+<tr>
+<td><code>--device cuda:4</code> (单独录制, 清理后重试)</td>
+<td>仅有 1 个录制 + 训练</td>
+<td>卡死 (0% CPU, sleeping)，12 分钟后确认失败</td>
+</tr>
+<tr>
+<td>p1_coarse (旧进程, 训练前)</td>
+<td><code>--device cuda:4</code></td>
+<td>成功 (16 分钟出视频) — <strong>唯一成功案例</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Kit 日志无崩溃信息，dmesg 无 OOM 记录。进程直接消失或永久 sleeping。</p>
+<h3 id="_5">最终结论</h3>
+<p><strong>Isaac Sim 录制与训练完全无法共存</strong>，即使：
+- 只运行 1 个录制进程
+- 录制使用 idle GPU (cuda:4/6/7)
+- 训练在另一组 GPU (cuda:0-3)</p>
+<p>根本原因: Omniverse Kit 渲染管线会初始化<strong>全部 8 块 GPU</strong>（不受 <code>--device</code> 限制），与训练进程的 Isaac Sim 实例产生 GPU 渲染资源冲突，导致录制进程在渲染初始化阶段 (<code>getBypassRenderSkelMeshProcessing</code>) 卡死或死亡。</p>
+<p>p1_coarse 的成功是唯一特例，可能与首次初始化时机、GPU 状态有关，不可复现。</p>
+<p><strong>可行方案：等训练完全结束后再录制 Isaac Lab 视频，或使用 MuJoCo EGL 替代（不受 Isaac Sim 影响）。</strong></p>
+<hr>
+    <footer>Generated from training_log_2026-05-07.md</footer>
+  </main>
+</body>
+</html>

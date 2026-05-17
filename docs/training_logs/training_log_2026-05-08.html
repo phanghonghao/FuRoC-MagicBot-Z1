@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Training Log — 2026-05-08</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="training-log-2026-05-08">Training Log — 2026-05-08</h1>
+<hr>
+<h2 id="1655-session-summary-p3_coarse_v2-orchestrator">[16:55] Session Summary — p3_coarse_v2 训练监控 + Orchestrator 文档编写</h2>
+<h3 id="completed">Completed</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>p3_coarse_v2 训练 plots 生成</td>
+<td>添加 <code>p3_coarse_v2</code> alias 到 plot script，生成 4 张 plots + PDF report。<strong>Files</strong>: <code>plots/p3_coarse_v2/</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>p3_coarse_old_v1 训练 plots 生成</td>
+<td>添加 <code>p3_coarse_old_v1</code> alias，生成旧版 v1 的 4 张 plots + PDF report。<strong>Files</strong>: <code>plots/p3_coarse_old_v1/</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>best_models.json 更新</td>
+<td>RTX 上运行 train_monitor --once，下载更新后的 best_models.json</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Orchestrator 运维文档编写</td>
+<td>新建 <code>Z1_Orchestrator_Guide.md</code>，含 7 张 Mermaid 流程图：架构总览、两层循环、Sub-Phase 执行、监控循环、过拟合处理、推进逻辑、State 数据结构。<strong>Files</strong>: <code>docs/Z1_Orchestrator_Guide.md</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>Orchestrator 源码审阅</td>
+<td>读取全部 7 个 automation 模块 (2357 行)，提取精确的内部流程写入文档</td>
+</tr>
+<tr>
+<td>6</td>
+<td>残留 orchestrator 进程确认</td>
+<td>确认之前的 3 个 orchestrator 进程已退出，不占 GPU</td>
+</tr>
+<tr>
+<td>7</td>
+<td>直接 torchrun vs orchestrator 分析</td>
+<td>回答用户关于 embedded monitor 缺失的问题，给出 p3_coarse_v2 完成后接入 orchestrator 的方案</td>
+</tr>
+</tbody>
+</table>
+<h3 id="uncompleted-blocked">Uncompleted / Blocked</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Blocker</th>
+<th>Next Step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>p3_coarse_v2 完成后接入 orchestrator</td>
+<td>训练仍在进行 (iter 13013/15000, ETA ~7.5h)</td>
+<td>等训练完成 → 更新 state → orchestrator --resume 从 p3_fine 开始</td>
+</tr>
+<tr>
+<td>2</td>
+<td>更新 bestmodel_phase.json</td>
+<td>p3_coarse_v2 尚未完成</td>
+<td>训练完成后更新</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-decisions">Key Decisions</h3>
+<ul>
+<li>Orchestrator 文档独立于 <code>Z1_5Phase_Auto_Pipeline.md</code>，后者专注参数表，新文档专注运维流程和故障恢复</li>
+<li>p3_coarse_v2 采用直接 torchrun 而非 orchestrator 启动（因之前 state 管理出问题），后续阶段重新接入 orchestrator</li>
+<li>旧 run 目录加 <code>_old_v1</code> 后缀防止 stale TensorBoard 数据干扰</li>
+</ul>
+<hr>
+<h2 id="1830-session-summary-orchestrator-adopt">[18:30] Session Summary — Orchestrator <code>--adopt</code> 功能实现 + 命名统一</h2>
+<h3 id="completed_1">Completed</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>--adopt</code> CLI 参数</td>
+<td><code>parse_args()</code> 新增 <code>--adopt</code> flag，<code>PhaseOrchestrator.__init__</code> 新增 <code>adopt</code> 参数</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>run()</code> adopt 分支</td>
+<td>在 crash recovery 之后、<code>_init_new_run()</code> 之前插入 adopt 逻辑</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>_adopt_existing_training()</code></td>
+<td>核心方法：检测运行中的训练 → 解析参数 → 推断子阶段 ID → 构建 state → 挂载 monitor</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>_detect_running_training()</code></td>
+<td><code>ps aux</code> + grep 找 train_multigpu/train.py 进程，支持 torchrun 父进程 → pgrep 找子进程</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>_parse_cmdline(pid)</code></td>
+<td>读取 <code>/proc/PID/cmdline</code>，解析 <code>--key value</code> 参数对</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>_infer_sub_phase_id()</code></td>
+<td>从 <code>agent_cfg</code> 路径推断（优先），或从 <code>run_name</code> 匹配 plan 中的子阶段 ID</td>
+</tr>
+<tr>
+<td>7</td>
+<td>命名统一 <code>--automation</code> → <code>--orchestrator</code></td>
+<td>skill.md 全局替换，与代码文件 <code>phase_orchestrator.py</code> 保持一致</td>
+</tr>
+<tr>
+<td>8</td>
+<td>skill.md 新增 <code>--orchestrator --adopt</code> 文档</td>
+<td>子命令表 + 完整使用说明（pipeline、prerequisites、SSH 命令模板）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="modified-files">Modified Files</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scripts/automation/phase_orchestrator.py</code></td>
+<td>+<code>--adopt</code> arg, +4 methods, +run() branch, +main() param</td>
+</tr>
+<tr>
+<td><code>~/.claude/skills/gpu-train/skill.md</code></td>
+<td><code>--automation</code> → <code>--orchestrator</code> rename, +<code>--adopt</code> docs</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-design-decisions">Key Design Decisions</h3>
+<ul>
+<li><strong>进程检测</strong>：优先找 <code>train_multigpu.py</code> + <code>torchrun</code> 组合，pgrep 子进程获取实际训练参数</li>
+<li><strong>子阶段推断</strong>：三级回退策略 — <code>agent_cfg</code> 路径 → <code>run_name</code> 精确匹配 → 去后缀匹配</li>
+<li><strong>adopt 后行为</strong>：与正常 orchestrator run 完全一致 — 监控 → 过拟合检测 → 回滚 → 录视频 → 推进下一阶段</li>
+<li><strong>无需改 <code>_monitor_sub_phase</code></strong>：<code>self._proc is None</code> 时 <code>returncode=-1</code> 已能正确触发 <code>_check_max_iterations_reached()</code></li>
+</ul>
+<hr>
+<h2 id="1945-session-summary-adopt-rtx-p3_coarse_v2">[19:45] Session Summary — <code>--adopt</code> RTX 实测调试 + 成功接管 p3_coarse_v2</h2>
+<h3 id="completed_2">Completed</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Bug fix: <code>_parse_cmdline</code> 无法解析 <code>--key=value</code></td>
+<td><strong>Root cause</strong>: torchrun 子进程的 cmdline 用 <code>--key=value</code> 格式（如 <code>--run_name=p3_coarse_v2</code>），而非 <code>--key value</code> · <strong>Fix</strong>: 加 <code>=</code> 分割逻辑，<code>split("=", 1)</code> 提取 key/value · <strong>Files</strong>: <code>phase_orchestrator.py</code> <code>_parse_cmdline()</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Bug fix: <code>_detect_running_training</code> 匹配到 bash wrapper</td>
+<td><strong>Root cause</strong>: bash -c wrapper 行包含 "train_multigpu.py" + "torchrun"，先于实际 python 进程被匹配 · <strong>Fix</strong>: 改为按优先级收集候选进程（worker &gt; torchrun &gt; single），跳过 bash wrapper · <strong>Files</strong>: <code>phase_orchestrator.py</code> <code>_detect_running_training()</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>第一次 adopt 失败后错误启动 p1_coarse 训练</td>
+<td>发现后立即 kill 错误的 orchestrator (PID 255909) + 训练 (PID 255918)，原始 p3_coarse_v2 未受影响</td>
+</tr>
+<tr>
+<td>4</td>
+<td>修复后第二次 adopt 成功</td>
+<td>Orchestrator (PID 261671) 成功接管 torchrun (PID 48006)，state 文件 + monitor 均正常</td>
+</tr>
+<tr>
+<td>5</td>
+<td>验证 adopt 状态</td>
+<td><code>orchestrator_state.json</code> 确认：sp=p3_coarse, pid=48006, status=running, monitor 首次 poll iter=10136 reward=36.05 HEALTHY</td>
+</tr>
+<tr>
+<td>6</td>
+<td>上传修复后的代码到 RTX</td>
+<td><code>scp phase_orchestrator.py</code> + <code>python -c 'import ...'</code> 验证通过</td>
+</tr>
+</tbody>
+</table>
+<h3 id="uncompleted-blocked_1">Uncompleted / Blocked</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Blocker</th>
+<th>Next Step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>p3_coarse_v2 训练完成 + orchestrator 自动推进</td>
+<td>训练 iter ~10136/15000，ETA ~5h</td>
+<td>Orchestrator 自动监控，完成后推进 p3_fine</td>
+</tr>
+<tr>
+<td>2</td>
+<td>训练完成后的 post-processing（下载模型/视频）</td>
+<td>依赖训练完成</td>
+<td><code>/gpu-train --orchestrator --status</code> 监控</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-decisions_1">Key Decisions</h3>
+<ul>
+<li>torchrun 的 cmdline 格式固定为 <code>--key=value</code>（<code>=</code> 分隔），而 <code>train.py</code> 用 <code>--key value</code>（空格分隔），两者都需支持</li>
+<li>进程检测优先级：python worker（直接有 args）&gt; torchrun launcher &gt; single-GPU train.py &gt; bash wrapper（跳过）</li>
+<li>adopt 失败时 fallthrough 到 <code>_init_new_run()</code> 是危险行为（会在有训练运行时启动新训练），应考虑加 guard — 当前通过 kill 快速处理了</li>
+</ul>
+    <footer>Generated from training_log_2026-05-08.md</footer>
+  </main>
+</body>
+</html>

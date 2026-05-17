@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>录制视频</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="_1">录制视频</h1>
+<blockquote>
+<p>推荐方式：直接使用 <code>D:/Desktop_Files/GPU-Train/RTX6000/rtx_record_video.sh</code>。
+当前一键流程会在 RTX 远端录制 Isaac Lab + MuJoCo，然后自动 <code>scp</code> 回本地、自动打标签、并删除本地 raw 视频。</p>
+<p>MuJoCo 可以在训练时录制（2 min），Isaac Sim 必须在训练停止时录制（15-20 min）。</p>
+</blockquote>
+<h2 id="jit-policy">前提：导出 JIT Policy</h2>
+<pre><code class="language-bash">CHECKPOINT=&quot;logs/rsl_rl/magiclab_z1_12dof_velocity/&lt;RUN_DIR&gt;/model_&lt;N&gt;.pt&quot;
+
+python -u scripts/export_jit.py --checkpoint ${CHECKPOINT}
+# 输出: &lt;RUN_DIR&gt;/exported/policy.pt
+</code></pre>
+<h2 id="mujoco">MuJoCo 录制（旧手动方式，仅保留参考）</h2>
+<pre><code class="language-bash">POLICY=&quot;logs/rsl_rl/magiclab_z1_12dof_velocity/&lt;RUN_DIR&gt;/exported/policy.pt&quot;
+SAVE_NAME=&quot;p3b_coarse_model10500&quot;
+
+python -u sim2sim/mujoco_manual.py \
+    --mjcf ~/magicbot-z1_description/mjcf/MAGICBOTZ1.xml \
+    --policy ${POLICY} \
+    --record /tmp/${SAVE_NAME}_mujoco.mp4 \
+    --num_steps 1000 \
+    --vel_x 0.3
+</code></pre>
+<p>下载到本地（旧手动方式）：</p>
+<pre><code class="language-bash"># 在本地 Windows 执行
+scp phh@192.168.120.155:/tmp/p3b_coarse_model10500_mujoco.mp4 &quot;D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/videos/p/p3b_coarse/&quot;
+</code></pre>
+<h2 id="isaac-sim">Isaac Sim 录制（旧手动方式，必须停止训练）</h2>
+<pre><code class="language-bash">CHECKPOINT=&quot;logs/rsl_rl/magiclab_z1_12dof_velocity/&lt;RUN_DIR&gt;/model_&lt;N&gt;.pt&quot;
+
+python -u scripts/rsl_rl/play_z1_video.py \
+    --checkpoint ${CHECKPOINT} \
+    --video \
+    --video_length 1000 \
+    --headless \
+    --num_envs 1 \
+    --device cuda:&lt;IDLE_GPU&gt;
+</code></pre>
+<p>视频输出：<code>&lt;RUN_DIR&gt;/videos/play/rl-video-step-0.mp4</code></p>
+<p>下载到本地（旧手动方式）：</p>
+<pre><code class="language-bash">scp phh@192.168.120.155:~/magiclab_rl_lab/logs/rsl_rl/magiclab_z1_12dof_velocity/&lt;RUN_DIR&gt;/videos/play/rl-video-step-0.mp4 \
+    &quot;D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/videos/p/p3b_coarse/p3b_coarse_isaaclab.mp4&quot;
+</code></pre>
+<h2 id="_2">下载训练参数（旧手动方式）</h2>
+<pre><code class="language-bash"># 本地 Windows 执行
+scp -r phh@192.168.120.155:~/magiclab_rl_lab/logs/rsl_rl/magiclab_z1_12dof_velocity/&lt;RUN_DIR&gt;/params/ \
+    &quot;D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/videos/p/p3b_coarse/params/&quot;
+</code></pre>
+<h2 id="_3">加标签（旧手动方式，本地执行）</h2>
+<pre><code class="language-bash">LABEL_SCRIPT=&quot;D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/scripts/label_video.py&quot;
+VIDEO=&quot;D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/videos/p/p3b_coarse/p3b_coarse_mujoco.mp4&quot;
+
+python &quot;$LABEL_SCRIPT&quot; &quot;$VIDEO&quot; \
+    --model model_10500 \
+    --run p3b_coarse \
+    --reward 28.53 \
+    --terrain intermediate \
+    --iteration 10500 \
+    --action-mean 0.65
+
+# 覆盖原文件
+mv &quot;${VIDEO%.mp4}_labeled.mp4&quot; &quot;$VIDEO&quot;
+</code></pre>
+<h2 id="_4">一键方式（推荐）</h2>
+<pre><code class="language-bash">bash D:/Desktop_Files/GPU-Train/RTX6000/rtx_record_video.sh &lt;RUN_DIR&gt; &lt;CHECKPOINT&gt; [VIDEO_LENGTH] [VEL_X] [DURATION] [GPU_ID]
+</code></pre>
+<p>默认值：</p>
+<ul>
+<li><code>VIDEO_LENGTH=1000</code></li>
+<li><code>VEL_X=0.3</code></li>
+<li><code>DURATION=20</code></li>
+<li><code>GPU_ID=auto</code>（自动选满足 <code>--idle</code> 规则的空闲卡）</li>
+</ul>
+    <footer>Generated from video_recording.md</footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Z1 手动训练指令</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="z1">Z1 手动训练指令</h1>
+<blockquote>
+<p>SSH 到 RTX 后直接复制粘贴运行，不依赖 Claude 代执行。</p>
+</blockquote>
+<h2 id="_1">快速开始</h2>
+<pre><code class="language-bash">ssh phh@192.168.120.155
+cd ~/magiclab_rl_lab
+source ~/miniconda3/etc/profile.d/conda.sh &amp;&amp; conda activate isaaclab
+</code></pre>
+<hr>
+<h2 id="_2">目录</h2>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="launch_training.md">launch_training.md</a></td>
+<td>启动训练（单卡 / 多卡 / 各阶段）</td>
+</tr>
+<tr>
+<td><a href="monitor_and_control.md">monitor_and_control.md</a></td>
+<td>监控、停止、查看状态</td>
+</tr>
+<tr>
+<td><a href="config_generation.md">config_generation.md</a></td>
+<td>用 orchestrator 生成配置（不启动训练）</td>
+</tr>
+<tr>
+<td><a href="video_recording.md">video_recording.md</a></td>
+<td>录制 Isaac Sim / MuJoCo 视频</td>
+</tr>
+<tr>
+<td><a href="zombie_cleanup.md">zombie_cleanup.md</a></td>
+<td>清理僵尸进程、GPU 占用</td>
+</tr>
+<tr>
+<td><a href="phase_params.md">phase_params.md</a></td>
+<td>各阶段参数速查表</td>
+</tr>
+</tbody>
+</table>
+    <footer>Generated from README.md</footer>
+  </main>
+</body>
+</html>

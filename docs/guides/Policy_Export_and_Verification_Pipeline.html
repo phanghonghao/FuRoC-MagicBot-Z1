@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RTX 训练 → 策略导出 → 视频录制 完整流程</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="rtx">RTX 训练 → 策略导出 → 视频录制 完整流程</h1>
+<blockquote>
+<p>这份文档保留为历史说明。当前日常使用请优先参考 <code>rtx_record_video.sh</code> 和 <code>/gpu-train --sim</code> 的现行流程：
+远端 RTX 录制 → 自动 <code>scp</code> 回本地 → 自动打标签 → 删除本地 raw 视频。</p>
+<p>本文档记录已验证通过的端到端流程：RTX6000 上训练 → JIT 导出 → RTX Isaac Sim / MuJoCo 录视频。</p>
+<p>最后验证：2026-05-07，FPS 修复（50fps = 控制频率），video_length=500（10s 实时）。</p>
+</blockquote>
+<hr>
+<h2 id="1">1. 架构概览</h2>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                        RTX 6000D (x86_64)                       │
+│  ┌──────────┐    ┌──────────────┐    ┌────────────────────────┐ │
+│  │ 训练      │───→│ export_jit.py│───→│ exported/policy.pt     │ │
+│  │ train.py  │    │ (纯 PyTorch) │    │ (JIT, ~1.1MB)         │ │
+│  └──────────┘    └──────────────┘    └───────┬────────────────┘ │
+│                                              │                  │
+│  ┌──────────────────┐  ┌─────────────────┐   │                  │
+│  │ Isaac Sim 录制    │  │ MuJoCo 录制      │◄──┤ (也支持原始      │
+│  │ play_z1_video.py │  │ mujoco_manual.py │   │   checkpoint)    │
+│  │ --headless       │  │ --record --headless│  │                  │
+│  │ fps=50 (关键!)   │  │ fps=50 (自动)    │   │                  │
+│  └──────────────────┘  └─────────────────┘   │                  │
+└──────────────────────────────────────────────┼──────────────────┘
+                                               │ scp (raw .mp4)
+                    ┌───────────────────────────┤
+                    │ 本地 Windows               │
+                    │ 1. ffmpeg re-encode        │
+                    │ 2. label_video.py (1次!)   │
+                    └───────────────────────────┘
+</code></pre>
+<!-- Spark (DGX) 已归还。旧流程参考:
+  - spark_play.py: Isaac Sim 录制脚本（已废弃，camera tracking 逻辑已移植到 play_z1_video.py）
+  - spark_deploy.sh: Spark 一键部署脚本（已废弃）
+  - 旧录制使用 --checkpoint 模式，RTX 上统一用 --policy (JIT) 模式
+-->
+
+<h3 id="fps">关键参数：FPS 必须匹配控制频率</h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>sim.dt</td>
+<td>0.002s</td>
+<td>物理仿真频率 500Hz</td>
+</tr>
+<tr>
+<td>decimation</td>
+<td>10</td>
+<td>控制频率 = 500/10 = <strong>50Hz</strong></td>
+</tr>
+<tr>
+<td>每步模拟时间</td>
+<td>0.02s</td>
+<td>= dt × decimation</td>
+</tr>
+<tr>
+<td><strong>RecordVideo fps</strong></td>
+<td><strong>50</strong></td>
+<td><strong>必须 = 控制频率，否则视频播放速度错误</strong></td>
+</tr>
+<tr>
+<td>video_length</td>
+<td>500 steps</td>
+<td>500 × 0.02s = <strong>10s 实时视频</strong></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>踩坑记录</strong>：<code>gym.wrappers.RecordVideo</code> 默认 fps=30（当 env 未设 <code>metadata["render_fps"]</code> 时）。
+Isaac Lab 环境未设此字段，导致 30fps ≠ 50Hz 控制频率，视频播放速度变成 0.6x 慢放。
+已在 <code>play_z1_video.py</code> 中显式传 <code>fps=50</code> 修复。</p>
+</blockquote>
+<h3 id="_1">版本兼容性矩阵</h3>
+<table>
+<thead>
+<tr>
+<th>组件</th>
+<th>RTX 6000</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>rsl-rl</td>
+<td>3.0.1 (<code>model_state_dict</code>)</td>
+<td><code>play_z1_video.py --checkpoint</code> 直接加载</td>
+</tr>
+<tr>
+<td>IsaacLab</td>
+<td>0.47.2</td>
+<td>源码同步</td>
+</tr>
+<tr>
+<td>IsaacSim</td>
+<td>4.5.0</td>
+<td><code>--headless</code> 直接录制（无需 Xvfb）</td>
+</tr>
+<tr>
+<td>PyTorch</td>
+<td>2.11.0+cu128</td>
+<td>JIT 模型导出 + 加载</td>
+</tr>
+<tr>
+<td>Python</td>
+<td>3.10</td>
+<td></td>
+</tr>
+<tr>
+<td>MuJoCo</td>
+<td>EGL offscreen</td>
+<td>无需 X Server，<code>MUJOCO_GL=egl</code></td>
+</tr>
+<tr>
+<td>empirical_normalization</td>
+<td><strong>False</strong></td>
+<td>JIT 导出无需包含归一化层，两种模式行为一致</td>
+</tr>
+</tbody>
+</table>
+<h3 id="jit">核心设计：为什么用 JIT 导出</h3>
+<p>rsl-rl 3.x 和 5.x 的 checkpoint 格式不兼容。通过 JIT 导出 actor 网络，得到一个纯 <code>torch.jit.script</code> 模型文件，<strong>任何平台、任何 rsl-rl 版本都能用 <code>torch.jit.load</code> 加载</strong>。</p>
+<blockquote>
+<p>验证：本训练 <code>empirical_normalization = False</code>，checkpoint 中无归一化统计量。
+JIT 导出的 actor 与 OnPolicyRunner 的 <code>act_inference</code> 产生完全相同的输出。</p>
+</blockquote>
+<hr>
+<h2 id="2">2. 文件清单</h2>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>位置</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>export_jit.py</code></td>
+<td>RTX: <code>~/magiclab_rl_lab/scripts/export_jit.py</code></td>
+<td>从 checkpoint 导出 JIT 模型</td>
+</tr>
+<tr>
+<td><code>play_z1_video.py</code></td>
+<td>RTX: <code>~/magiclab_rl_lab/scripts/rsl_rl/play_z1_video.py</code></td>
+<td>Isaac Sim 录制（<code>--checkpoint</code> 或 <code>--policy</code>，fps=50）</td>
+</tr>
+<tr>
+<td><code>mujoco_manual.py</code></td>
+<td>RTX: <code>~/magiclab_rl_lab/sim2sim/mujoco_manual.py</code></td>
+<td>MuJoCo sim2sim 录制（EGL offscreen，fps=50）</td>
+</tr>
+<tr>
+<td><code>rtx_record_video.sh</code></td>
+<td>本地: <code>D:\Desktop_Files\GPU-Train\RTX6000\rtx_record_video.sh</code></td>
+<td>一键录制 Isaac Sim + MuJoCo</td>
+</tr>
+<tr>
+<td><code>label_video.py</code></td>
+<td>本地: <code>Magicbot_Z1/scripts/label_video.py</code></td>
+<td>视频标签叠加（保留输入 fps）</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="3-6">3. 完整录制流程（6 步）</h2>
+<h3 id="31-rtx-jit">3.1 RTX 上导出 JIT（如果尚未导出）</h3>
+<pre><code class="language-bash">ssh phh@192.168.120.155
+cd ~/magiclab_rl_lab &amp;&amp; source ~/miniconda3/etc/profile.d/conda.sh &amp;&amp; conda activate isaaclab
+
+# 导出最佳 checkpoint
+python scripts/export_jit.py \
+    --checkpoint logs/rsl_rl/&lt;RUN&gt;/model_&lt;N&gt;.pt
+# 输出: logs/rsl_rl/&lt;RUN&gt;/exported/policy.pt
+</code></pre>
+<h3 id="32-rtx-isaac-sim-headless-fps50">3.2 RTX 上 Isaac Sim 录制（headless, fps=50）</h3>
+<pre><code class="language-bash">ssh phh@192.168.120.155 &quot;cd ~/magiclab_rl_lab &amp;&amp; \
+  source ~/miniconda3/etc/profile.d/conda.sh &amp;&amp; conda activate isaaclab &amp;&amp; \
+  python -u scripts/rsl_rl/play_z1_video.py \
+    --policy logs/rsl_rl/&lt;RUN&gt;/exported/policy.pt \
+    --headless --video --video_length 500 --num_envs 1 --device=cuda:0&quot;
+# 输出: logs/rsl_rl/&lt;RUN&gt;/videos/play/rl-video-step-0.mp4 (500帧, 50fps, 10s)
+</code></pre>
+<p><strong>play_z1_video.py 参数</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>说明</th>
+<th>默认值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--checkpoint</code></td>
+<td>原始 checkpoint 路径（OnPolicyRunner）</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>--policy</code></td>
+<td>JIT policy 路径</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>--num_envs</code></td>
+<td>并行环境数</td>
+<td>1</td>
+</tr>
+<tr>
+<td><code>--video</code></td>
+<td>录制视频</td>
+<td>False</td>
+</tr>
+<tr>
+<td><code>--video_length</code></td>
+<td>视频步数（500 = 10s）</td>
+<td><strong>500</strong></td>
+</tr>
+<tr>
+<td><code>--max_steps</code></td>
+<td>非录制模式最大步数</td>
+<td>800</td>
+</tr>
+<tr>
+<td><code>--no_camera_track</code></td>
+<td>禁用摄像头追踪</td>
+<td>False</td>
+</tr>
+<tr>
+<td><code>--camera_distance</code></td>
+<td>摄像头距离</td>
+<td>3.5</td>
+</tr>
+<tr>
+<td><code>--camera_height</code></td>
+<td>摄像头高度</td>
+<td>1.5</td>
+</tr>
+</tbody>
+</table>
+<h3 id="33-rtx-mujoco-egl-fps50">3.3 RTX 上 MuJoCo 录制（EGL, fps=50）</h3>
+<pre><code class="language-bash">ssh phh@192.168.120.155 &quot;cd ~/magiclab_rl_lab &amp;&amp; \
+  source ~/miniconda3/etc/profile.d/conda.sh &amp;&amp; conda activate isaaclab &amp;&amp; \
+  python -u sim2sim/mujoco_manual.py \
+    --mjcf ~/magicbot-z1_description/mjcf/MAGICBOTZ1.xml \
+    --checkpoint logs/rsl_rl/&lt;RUN&gt;/exported/policy.pt \
+    --record /tmp/&lt;save_name&gt;.mp4 \
+    --duration 10 --vel_x 0.5 --headless&quot;
+# 输出: /tmp/&lt;save_name&gt;.mp4 (fps=50, 10s)
+</code></pre>
+<h3 id="34">3.4 下载到本地</h3>
+<pre><code class="language-bash">VIDDIR=&quot;D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/videos/&lt;stage&gt;&quot;
+mkdir -p &quot;$VIDDIR&quot;
+
+# Isaac Sim
+scp phh@192.168.120.155:~/magiclab_rl_lab/logs/rsl_rl/&lt;RUN&gt;/videos/play/rl-video-step-0.mp4 \
+    &quot;$VIDDIR/&lt;stage&gt;_raw_isaaclab.mp4&quot;
+
+# MuJoCo
+scp phh@192.168.120.155:/tmp/&lt;save_name&gt;.mp4 \
+    &quot;$VIDDIR/&lt;stage&gt;_raw_mujoco.mp4&quot;
+</code></pre>
+<h3 id="35-ffmpeg-re-encodeisaac-sim">3.5 本地 ffmpeg re-encode（Isaac Sim 视频需要）</h3>
+<p>Isaac Sim 输出的 mp4 容器格式可能无法被 PyAV 直接读取，需要 ffmpeg 重编码：</p>
+<pre><code class="language-bash">python -c &quot;
+import imageio_ffmpeg, subprocess, glob
+ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+for raw in glob.glob('D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/videos/*/*_raw_isaaclab.mp4'):
+    out = raw.replace('_raw_isaaclab.mp4', '_isaaclab_tmp.mp4')
+    subprocess.run([ffmpeg, '-y', '-i', raw, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', out])
+    print(f'Re-encoded: {out}')
+&quot;
+</code></pre>
+<blockquote>
+<p>MuJoCo 视频由 <code>imageio.mimwrite</code> 生成，格式标准，通常不需要 re-encode。</p>
+</blockquote>
+<h3 id="36-label_videopy-1">3.6 本地 label_video.py（只执行 1 次！）</h3>
+<pre><code class="language-bash">SCRIPT=&quot;D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/scripts/label_video.py&quot;
+VIDDIR=&quot;D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/videos&quot;
+
+# Isaac Lab 视频 (输入 fps=50, 输出 fps=50)
+python &quot;$SCRIPT&quot; \
+  &quot;$VIDDIR/s1_flat/s1_flat_isaaclab_tmp.mp4&quot; \
+  -o &quot;$VIDDIR/s1_flat/s1_flat_model3861_isaaclab.mp4&quot; \
+  --run s1_flat --model model_3861 \
+  --time-out 0.9712 --ep-len 970 --bad-ori 0.0288 --vel-err 0.33
+
+# MuJoCo 视频 (输入 fps=50, 输出 fps=50)
+python &quot;$SCRIPT&quot; \
+  &quot;$VIDDIR/s1_flat/s1_flat_raw_mujoco.mp4&quot; \
+  -o &quot;$VIDDIR/s1_flat/s1_flat_m3861_sim2sim_mujoco.mp4&quot; \
+  --run s1_flat --model model_3861 \
+  --time-out 0.9712 --ep-len 970 --bad-ori 0.0288 --vel-err 0.33
+</code></pre>
+<blockquote>
+<p><code>label_video.py</code> 现在自动读取输入视频的 fps 并保留，不再硬编码 30fps。</p>
+</blockquote>
+<h3 id="37">3.7 清理临时文件</h3>
+<pre><code class="language-bash">VIDDIR=&quot;D:/Desktop_Files/GPU-Train/RTX6000/Magicbot_Z1/videos&quot;
+find &quot;$VIDDIR&quot; -name '*_raw_*.mp4' -delete
+find &quot;$VIDDIR&quot; -name '*_tmp.mp4' -delete
+</code></pre>
+<hr>
+<h2 id="4-bestmodel">4. 当前 bestmodel 对照表</h2>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Run Dir</th>
+<th>Best Model</th>
+<th>peak_reward</th>
+<th>time_out</th>
+<th>vel_err</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>s1_flat</td>
+<td>2026-04-30_04-53-17_s1_flat</td>
+<td>model_3861</td>
+<td>48.35</td>
+<td>97.1%</td>
+<td>0.33 m/s</td>
+</tr>
+<tr>
+<td>s2_gentle</td>
+<td>2026-05-01_04-50-05_s2_gentle</td>
+<td>model_47862</td>
+<td>48.10</td>
+<td>97.4%</td>
+<td>0.33 m/s</td>
+</tr>
+<tr>
+<td>s3_rough_l2</td>
+<td>2026-05-01_07-04-35_s3_rough_l2</td>
+<td>model_32790</td>
+<td>38.94</td>
+<td>94.1%</td>
+<td>0.41 m/s</td>
+</tr>
+<tr>
+<td>s4_full_terrain</td>
+<td>2026-05-04_16-56-05_s4_full_terrain</td>
+<td>model_8100</td>
+<td>67.64</td>
+<td>69.3%</td>
+<td>1.39 m/s</td>
+</tr>
+</tbody>
+</table>
+<p>JIT policy 路径：<code>logs/rsl_rl/magiclab_z1_12dof_velocity/&lt;run_dir&gt;/exported/policy.pt</code></p>
+<hr>
+<h2 id="5">5. 视频输出目录</h2>
+<pre><code>D:\Desktop_Files\GPU-Train\RTX6000\Magicbot_Z1\videos\
+├── s1_flat\
+│   ├── s1_flat_model3861_isaaclab.mp4       ← Isaac Lab, 50fps, 10s, labeled
+│   └── s1_flat_m3861_sim2sim_mujoco.mp4     ← MuJoCo, 50fps, ~10s, labeled
+│
+├── s2_gentle\
+│   ├── s2_gentle_model47862_isaaclab.mp4
+│   └── s2_gentle_m47862_sim2sim_mujoco.mp4
+│
+├── s3_rough_l2\
+│   ├── s3_rough_l2_model32790_isaaclab.mp4
+│   └── s3_rough_l2_m32790_sim2sim_mujoco.mp4
+│
+├── s4_full_terrain\
+│   ├── s4_full_terrain_model8100_isaaclab.mp4
+│   └── s4_full_terrain_m8100_sim2sim_mujoco.mp4
+│
+└── sim2sim_experiments\                      ← MuJoCo 参数调优实验
+</code></pre>
+<hr>
+<h2 id="6-rtx_record_videosh">6. 一键录制脚本（rtx_record_video.sh）</h2>
+<pre><code class="language-bash"># 用法
+bash rtx_record_video.sh &lt;RUN_DIR&gt; &lt;CHECKPOINT&gt; [VIDEO_LENGTH] [VEL_X] [DURATION]
+
+# 示例
+bash rtx_record_video.sh \
+    magiclab_z1_12dof_velocity/2026-05-04_16-56-05_s4_full_terrain model_8100 500 0.5 10
+</code></pre>
+<p>自动流程：GPU 检查 → JIT 导出 → Isaac Sim 录制 → MuJoCo 录制 → 输出下载命令。</p>
+<hr>
+<h2 id="7">7. 验证清单</h2>
+<table>
+<thead>
+<tr>
+<th>验证项</th>
+<th>预期结果</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>export_jit.py</code> 导出</td>
+<td><code>exported/policy.pt</code> ~1.1 MB</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>JIT = checkpoint 行为一致</td>
+<td><code>empirical_normalization=False</code>, 无归一化差异</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Isaac Sim 录制 fps=50</td>
+<td>视频实时播放，无快放/慢放</td>
+<td>✅ 2026-05-07 修复</td>
+</tr>
+<tr>
+<td>video_length=500</td>
+<td>10s 模拟时间 = 10s 视频时长</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><code>label_video.py</code> 保留 fps</td>
+<td>输出 fps = 输入 fps (不再硬编码30)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Camera tracking</td>
+<td>headless 模式下机器人可见</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Renderer warmup</td>
+<td>无黑帧（20步预热）</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>RTX MuJoCo EGL</td>
+<td>机器人站稳不摔倒</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="8">8. 常见问题</h2>
+<table>
+<thead>
+<tr>
+<th>问题</th>
+<th>原因</th>
+<th>解决</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>视频中机器人速度明显偏慢</td>
+<td>RecordVideo fps=30 ≠ 控制频率50Hz</td>
+<td><code>play_z1_video.py</code> 中传 <code>fps=50</code></td>
+</tr>
+<tr>
+<td>label 后视频变慢放</td>
+<td><code>label_video.py</code> 硬编码 fps=30</td>
+<td>已修复：自动读取输入 fps</td>
+</tr>
+<tr>
+<td>视频只有 4 秒太短</td>
+<td>video_length=200 (200×0.02=4s)</td>
+<td>改为 500 (10s)</td>
+</tr>
+<tr>
+<td>Isaac Sim 视频 PyAV 读不了</td>
+<td>Isaac Sim 输出容器格式不标准</td>
+<td>先 ffmpeg re-encode</td>
+</tr>
+<tr>
+<td>视频有两层 label</td>
+<td>label_video.py 被执行了两次</td>
+<td>只执行 1 次，对 re-encode 后的 tmp 文件</td>
+</tr>
+<tr>
+<td>RTX Isaac Sim 录制全黑</td>
+<td>渲染器未预热</td>
+<td>已有 20 步 warmup</td>
+</tr>
+<tr>
+<td>RTX Isaac Sim 看不到机器人</td>
+<td>headless 模式摄像头停在原点</td>
+<td>已有 camera tracking</td>
+</tr>
+<tr>
+<td>MuJoCo 机器人摔倒</td>
+<td>缺少 sim2sim 修正</td>
+<td>使用 <code>mujoco_manual.py</code>（已内置修正）</td>
+</tr>
+<tr>
+<td><code>play_z1_video.py</code> 报 <code>terrain_generator</code> AttributeError</td>
+<td>play config 访问 <code>terrain_generator.num_rows</code> 但为 None</td>
+<td>已加 None guard</td>
+</tr>
+<tr>
+<td><code>play_z1_video.py</code> 报 <code>Reward term not found</code></td>
+<td>curriculum 引用 weight=0 的 reward term</td>
+<td>play config 中禁用 curriculum</td>
+</tr>
+</tbody>
+</table>
+    <footer>Generated from Policy_Export_and_Verification_Pipeline.md</footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Step 3 训练方案：显式 PD + 增强 Domain Randomization</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="step-3-pd-domain-randomization">Step 3 训练方案：显式 PD + 增强 Domain Randomization</h1>
+<h2 id="_1">背景</h2>
+<h3 id="_2">当前问题</h3>
+<p>s2_gentle 训练使用 <code>ImplicitActuator</code>（隐式 PD），MuJoCo 部署使用显式 PD。
+sim2sim 实验表明，所有部署侧调参（Kd 增大、动作平滑、摩擦调整）均无效（14 falls/20s 不变）。</p>
+<h3 id="_3">根因确认</h3>
+<pre><code># s2_gentle 训练时用的执行器（从 params/env.yaml 确认）：
+class_type: isaaclab.actuators.actuator_pd:ImplicitActuator  ← 隐式 PD
+
+# MuJoCo 部署时手动计算：
+τ = Kp * (target - q_cur) - Kd * dq_cur                    ← 显式 PD
+</code></pre>
+<p>隐式 PD（PhysX 内部求解，无条件稳定）vs 显式 PD（手动计算，可能震荡）的差异
+是 sim2sim gap 的根本来源，无法通过部署侧调参消除。</p>
+<h3 id="_4">解决方案</h3>
+<p>训练时也使用显式 PD（<code>IdealPDActuatorCfg</code>），使两侧 PD 公式一致。
+配合增强的 domain randomization，让策略对残余物理差异鲁棒。</p>
+<hr>
+<h2 id="1">修改 1：执行器配置（已完成）</h2>
+<p><strong>文件</strong>: <code>source/magiclab_rl_lab/magiclab_rl_lab/assets/robots/magiclab.py</code></p>
+<p>当前状态：已经是 <code>IdealPDActuatorCfg</code>（s5 实验时修改）。</p>
+<pre><code class="language-python"># 当前 magiclab.py 第 106 行
+actuators={
+    &quot;legs&quot;: IdealPDActuatorCfg(           # ← 已改为显式 PD
+        joint_names_expr=[...],
+        effort_limit=120,
+        stiffness={
+            &quot;.*_hip_pitch_joint&quot;: 100.0,
+            &quot;.*_hip_roll_joint&quot;: 100.0,
+            &quot;.*_hip_yaw_joint&quot;: 100.0,
+            &quot;.*_knee_joint&quot;: 150.0,
+        },
+        damping={
+            &quot;.*_hip_pitch_joint&quot;: 4.0,
+            &quot;.*_hip_roll_joint&quot;: 4.0,
+            &quot;.*_hip_yaw_joint&quot;: 4.0,
+            &quot;.*_knee_joint&quot;: 5.0,
+        },
+        armature={
+            &quot;.*_hip.*&quot;: 0.02863,
+            &quot;.*_knee.*&quot;: 0.02863,
+        },
+    ),
+    &quot;feet&quot;: IdealPDActuatorCfg(           # ← 已改为显式 PD
+        effort_limit=50,
+        stiffness=60.0,
+        damping=3.0,
+        armature=0.01503,
+    ),
+}
+</code></pre>
+<p><strong>无需修改此文件。</strong></p>
+<hr>
+<h2 id="2-domain-randomization">修改 2：增强 Domain Randomization</h2>
+<p><strong>文件</strong>: <code>source/magiclab_rl_lab/magiclab_rl_lab/tasks/locomotion/robots/z1/12dof/velocity_env_cfg.py</code></p>
+<h3 id="21">2.1 摩擦随机化范围扩大</h3>
+<pre><code class="language-python"># 当前 EventCfg.physics_material：
+&quot;static_friction_range&quot;: (0.3, 1.0),
+&quot;dynamic_friction_range&quot;: (0.3, 1.0),
+
+# 修改为（参考 Humanoid-Gym）：
+&quot;static_friction_range&quot;: (0.1, 2.0),
+&quot;dynamic_friction_range&quot;: (0.1, 2.0),
+</code></pre>
+<p><strong>原理</strong>：更宽的摩擦范围让策略学会适应从非常滑到非常粘的地面，
+覆盖 PhysX 和 MuJoCo 之间的摩擦差异。</p>
+<h3 id="22">2.2 质量随机化范围扩大</h3>
+<pre><code class="language-python"># 当前 EventCfg.add_base_mass：
+&quot;mass_distribution_params&quot;: (0.7, 1.3),
+
+# 修改为：
+&quot;mass_distribution_params&quot;: (0.5, 1.5),
+</code></pre>
+<p><strong>原理</strong>：更宽的质量范围增强策略的鲁棒性，
+适应不同物理引擎的质量积分差异。</p>
+<h3 id="23">2.3 推力扰动增强</h3>
+<pre><code class="language-python"># 当前 EventCfg.push_robot：
+&quot;interval_range_s&quot;: (5.0, 5.0),
+&quot;velocity_range&quot;: {&quot;x&quot;: (-0.5, 0.5), &quot;y&quot;: (-0.5, 0.5)}
+
+# 修改为：
+&quot;interval_range_s&quot;: (3.0, 5.0),       # 更频繁
+&quot;velocity_range&quot;: {&quot;x&quot;: (-1.0, 1.0), &quot;y&quot;: (-1.0, 1.0)}  # 更强
+</code></pre>
+<p><strong>原理</strong>：更频繁更强的扰动让策略学会从失衡中恢复，
+减少对特定物理引擎稳定性的依赖。</p>
+<hr>
+<h2 id="3">修改 3：观测噪声增强</h2>
+<p><strong>文件</strong>: <code>velocity_env_cfg.py</code> 的 <code>ObservationsCfg.PolicyCfg</code></p>
+<pre><code class="language-python"># 当前噪声设置：
+base_ang_vel  = ObsTerm(..., noise=Unoise(n_min=-0.2, n_max=0.2))
+projected_gravity = ObsTerm(..., noise=Unoise(n_min=-0.1, n_max=0.1))
+joint_pos_rel = ObsTerm(..., noise=Unoise(n_min=-0.02, n_max=0.02))
+joint_vel_rel = ObsTerm(..., noise=Unoise(n_min=-1.5, n_max=1.5), scale=0.05)
+
+# 建议增大（参考 Humanoid-Gym）：
+base_ang_vel  = ObsTerm(..., noise=Unoise(n_min=-0.3, n_max=0.3))    # ±0.2 → ±0.3
+projected_gravity = ObsTerm(..., noise=Unoise(n_min=-0.15, n_max=0.15))  # ±0.1 → ±0.15
+joint_pos_rel = ObsTerm(..., noise=Unoise(n_min=-0.05, n_max=0.05))   # ±0.02 → ±0.05
+joint_vel_rel = ObsTerm(..., noise=Unoise(n_min=-2.0, n_max=2.0), scale=0.05)  # ±1.5 → ±2.0
+</code></pre>
+<p><strong>原理</strong>：更大的观测噪声让策略不依赖精确的传感器读数，
+适应不同物理引擎的观测偏差。</p>
+<hr>
+<h2 id="4reward">修改 4：Reward 调整</h2>
+<p><strong>文件</strong>: <code>velocity_env_cfg.py</code> 的 <code>RewardsCfg</code></p>
+<p>显式 PD 比隐式 PD 更容易震荡，需要调整 reward 鼓励平滑动作：</p>
+<pre><code class="language-python"># 增大 action_rate 惩罚（鼓励平滑动作）
+action_rate = RewTerm(func=mdp.action_rate_l1, weight=-0.1)  # 从 -0.05 增大到 -0.1
+
+# 可选：增大 joint_acc 惩罚（抑制关节加速度过大）
+joint_acc = RewTerm(func=mdp.joint_acc_l2, weight=-5e-7)  # 从 -2.5e-7 增大
+</code></pre>
+<hr>
+<h2 id="velocity_env_cfgpy">完整的 velocity_env_cfg.py 修改对比</h2>
+<h3 id="eventcfg">EventCfg 部分</h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>旧值 (s2_gentle)</th>
+<th>新值 (s6_explicit_pd)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>friction_range</td>
+<td>(0.3, 1.0)</td>
+<td><strong>(0.1, 2.0)</strong></td>
+</tr>
+<tr>
+<td>mass_range (pelvis)</td>
+<td>(0.7, 1.3)</td>
+<td><strong>(0.5, 1.5)</strong></td>
+</tr>
+<tr>
+<td>mass_range (others)</td>
+<td>(0.7, 1.3)</td>
+<td><strong>(0.5, 1.5)</strong></td>
+</tr>
+<tr>
+<td>push interval</td>
+<td>(5.0, 5.0)</td>
+<td><strong>(3.0, 5.0)</strong></td>
+</tr>
+<tr>
+<td>push velocity</td>
+<td>±0.5</td>
+<td><strong>±1.0</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="observationscfgpolicycfg">ObservationsCfg.PolicyCfg 部分</h3>
+<table>
+<thead>
+<tr>
+<th>观测项</th>
+<th>旧噪声</th>
+<th>新噪声</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>base_ang_vel</td>
+<td>±0.2</td>
+<td><strong>±0.3</strong></td>
+</tr>
+<tr>
+<td>projected_gravity</td>
+<td>±0.1</td>
+<td><strong>±0.15</strong></td>
+</tr>
+<tr>
+<td>joint_pos_rel</td>
+<td>±0.02</td>
+<td><strong>±0.05</strong></td>
+</tr>
+<tr>
+<td>joint_vel_rel</td>
+<td>±1.5</td>
+<td><strong>±2.0</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="rewardscfg">RewardsCfg 部分</h3>
+<table>
+<thead>
+<tr>
+<th>Reward</th>
+<th>旧权重</th>
+<th>新权重</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>action_rate</td>
+<td>-0.05</td>
+<td><strong>-0.1</strong></td>
+</tr>
+<tr>
+<td>joint_acc</td>
+<td>-2.5e-7</td>
+<td><strong>-5e-7</strong></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="_5">启动方式</h2>
+<h3 id="-automation5-phase-pipeline">通过 --automation（5-phase pipeline）</h3>
+<pre><code class="language-bash"># 1. 先更新 velocity_env_cfg.py（上面列出的修改）
+# 2. 确认 magiclab.py 已是 IdealPDActuatorCfg
+# 3. 启动自动化训练
+
+/gpu-train --start --from s2_gentle --run s6_explicit_pd_dr --gpus 4
+</code></pre>
+<h3 id="_6">或手动启动（单次训练）</h3>
+<pre><code class="language-bash">ssh phh@192.168.120.155 &quot;cd ~/magiclab_rl_lab &amp;&amp; \
+  source ~/miniconda3/etc/profile.d/conda.sh &amp;&amp; conda activate isaaclab &amp;&amp; \
+  nohup python -u scripts/rsl_rl/train.py \
+    --task Magiclab-Z1-12dof-Velocity \
+    --run_name s6_explicit_pd_dr \
+    --headless --num_envs 16384 --device cuda:0 \
+    --max_iterations 50000 \
+  &gt; /tmp/z1_train_s6.log 2&gt;&amp;1 &amp; echo PID=\$!&quot;
+</code></pre>
+<hr>
+<h2 id="_7">验证计划</h2>
+<h3 id="_8">训练中验证</h3>
+<ol>
+<li>启动后检查 <code>params/env.yaml</code>，确认 <code>class_type: IdealPDActuator</code>（不是 ImplicitActuator）</li>
+<li>~500 iter 后检查 reward 趋势（应为正值且上升）</li>
+<li>~2000 iter 后录制 Isaac Lab 视频，确认步态正常</li>
+</ol>
+<h3 id="sim2sim">训练后 sim2sim 验证</h3>
+<ol>
+<li>导出 JIT policy：<code>python scripts/export_jit.py --checkpoint &lt;best_model&gt;</code></li>
+<li>用 <code>mujoco_humanoid_gym.py</code>（原始参数，无 Kd boost）测试</li>
+<li>对比 s2_gentle（14 falls/20s）vs s6_explicit_pd 的摔倒次数</li>
+<li>目标：摔倒次数 &lt; 5 次/20s，或平均站立时间 &gt; 5s</li>
+</ol>
+<h3 id="_9">关键对比指标</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>s2_gentle (implicit PD)</th>
+<th>s6_explicit_pd (目标)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MuJoCo 摔倒/20s</td>
+<td>14</td>
+<td><strong>&lt; 5</strong></td>
+</tr>
+<tr>
+<td>平均站立时间</td>
+<td>~1.4s</td>
+<td><strong>&gt; 5s</strong></td>
+</tr>
+<tr>
+<td>需要手动 Kd boost</td>
+<td>是</td>
+<td><strong>否</strong></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="_10">参考资料</h2>
+<ul>
+<li>Isaac Lab 执行器对比：<code>IsaacLab/source/isaaclab/isaaclab/actuators/actuator_pd.py</code></li>
+<li><code>ImplicitActuator</code>：设 position/velocity target，PhysX 内部 PD</li>
+<li><code>IdealPDActuator</code>：手动计算 τ = Kp<em>error + Kd</em>error_vel，直接设 effort</li>
+<li>Humanoid-Gym 做法：两侧都用显式 PD + 摩擦随机化 0.1-2.0 + 质量随机化 ±5kg</li>
+<li>s5_explicit_pd_16k 实验记录：用 IdealPDActuatorCfg 训练，但只跑到 iter 1087（overfitting），
+  说明显式 PD 本身可以训练，但需要更完整的训练流程和更好的超参</li>
+</ul>
+    <footer>Generated from Step3_ExplicitPD_Retrain_Plan.md</footer>
+  </main>
+</body>
+</html>

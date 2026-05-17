@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Training Log — 2026-05-10</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="training-log-2026-05-10">Training Log — 2026-05-10</h1>
+<hr>
+<h2 id="0119-session-summary-p3b_stable-launch-attempt-mujoco-terrain-development">[01:19] Session Summary — p3b_stable launch attempt + MuJoCo terrain development</h2>
+<h3 id="completed">Completed</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>p3b_stable training launch</td>
+<td>Attempted to launch on RTX with anti-overfitting PPO (entropy=0.03, lr=3e-5, kl=0.005). Failed: GPU 0-3 occupied by Justin's VLLM TP0-TP3 (~75GB each). PhysX OOM on GPU 0.</td>
+</tr>
+<tr>
+<td>2</td>
+<td>GPU resource survey</td>
+<td>Identified: GPU 0-3 busy (Justin VLLM), GPU 4-7 idle. torchrun assigns from GPU 0 — cannot skip to GPU 4-7.</td>
+</tr>
+<tr>
+<td>3</td>
+<td>MuJoCo terrain support</td>
+<td>Added <code>--terrain p3b</code> to <code>mujoco_manual.py</code>. Generates heightfield matching p3b Isaac Sim config (flat 50%, random_grid 30%, stairs 10%, boxes 10%). Uses MuJoCo Python API to inject hfield data after XML load (bypasses binary file format issues).</td>
+</tr>
+<tr>
+<td>4</td>
+<td>MuJoCo hfield format debugging</td>
+<td>Discovered MuJoCo 3.8.0 hfield file format is incompatible with standard binary dumps. Solution: define hfield in XML without <code>file</code> attribute, set <code>model.hfield_data[:]</code> via Python API.</td>
+</tr>
+<tr>
+<td>5</td>
+<td>s1_flat sim2sim verification</td>
+<td>Confirmed <code>mujoco_manual.py</code> works correctly with s1_flat model: 20s walk, 3.6m distance, 0 falls.</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Bug fix: p3b_fine MuJoCo sim2sim failure</td>
+<td><strong>Root cause</strong>: p3b_fine model fails in MuJoCo (9 falls/10s on flat ground, 0 falls but 0 movement on terrain). s1_flat works fine. Suspected sim2sim gap from terrain curriculum training — policy may depend on Isaac Sim-specific physics or observation features not replicated in MuJoCo. <strong>Status</strong>: Unresolved.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="uncompleted-blocked">Uncompleted / Blocked</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Blocker</th>
+<th>Next Step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>p3b_stable training launch</td>
+<td>GPU 0-3 occupied by Justin's VLLM. torchrun can't use GPU 4-7.</td>
+<td>Wait for Justin to finish, or use single-GPU with <code>--device cuda:4</code> (requires code change for single GPU launch)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>p3b_fine MuJoCo video with terrain</td>
+<td>sim2sim broken for p3b_fine model (works for s1_flat)</td>
+<td>Debug observation mismatch, or use Isaac Sim recording on single GPU (cuda:4)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>p3b_stable training</td>
+<td>Not yet started</td>
+<td>Re-launch after GPU 0-3 freed, or modify launch for single GPU</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-decisions">Key Decisions</h3>
+<ul>
+<li><strong>Abandoned p4/p5 rough terrain</strong>: Decided in previous session to stop p4_fine and focus on indoor/flat walking (p3b terrain level sufficient)</li>
+<li><strong>Anti-overfitting PPO params</strong>: entropy_coef 0.03, lr 3e-5, desired_kl 0.005 — chosen to address consistent overfitting across all phases</li>
+<li><strong>Terrain in MuJoCo</strong>: Chose Python API hfield injection over file-based approach due to MuJoCo 3.8.0 binary format incompatibility</li>
+<li><strong>p3b_fine sim2sim not viable</strong>: Robot can't walk in MuJoCo — likely needs Isaac Sim recording instead</li>
+</ul>
+<h3 id="files-modified">Files Modified</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>~/magiclab_rl_lab/sim2sim/mujoco_manual.py</code> (RTX)</td>
+<td>Added <code>--terrain</code> arg, <code>generate_terrain_data()</code>, <code>load_model_with_terrain()</code>. Terrain hfield injected via Python API.</td>
+</tr>
+<tr>
+<td><code>~/magiclab_rl_lab/tmp/phase_configs/p3b_stable/ppo_override_cfg.py</code> (RTX)</td>
+<td>Created in previous session: anti-overfitting PPO config</td>
+</tr>
+<tr>
+<td><code>~/magiclab_rl_lab/source/.../velocity_env_cfg.py</code> (RTX)</td>
+<td>Restored to p3b terrain config (from p3b_fine backup)</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="0210-session-summary-mujoco-terrain-video-recording-pipeline-p1-p3b">[02:10] Session Summary — MuJoCo terrain video recording pipeline (p1-p3b)</h2>
+<h3 id="completed_1">Completed</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>p1_fine MuJoCo video (flat)</td>
+<td>Recorded + downloaded + labeled. 1000 steps, 0 falls, 0.2m movement. File: <code>videos/p/p1_fine/p1_fine_m2800_sim2sim_mujoco.mp4</code> (744K)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>p2_fine MuJoCo video (flat)</td>
+<td>Recorded + downloaded + labeled. 1000 steps, 0 falls, 4.0m movement. File: <code>videos/p/p2_fine/p2_fine_m3000_sim2sim_mujoco.mp4</code> (381K)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>p3_fine MuJoCo video (gentle terrain)</td>
+<td>Recorded + downloaded + labeled. 1000 steps, 20 falls (sim2sim broken). File: <code>videos/p/p3_fine/p3_fine_m10700_sim2sim_mujoco.mp4</code> (795K)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>p3b_fine MuJoCo video (intermediate terrain)</td>
+<td>Recorded + downloaded + labeled. 1000 steps, 0 falls but 0m movement (sim2sim broken). File: <code>videos/p/p3b_fine/p3b_fine_m14600_sim2sim_mujoco.mp4</code> (632K)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Training params download</td>
+<td>Downloaded <code>params/</code> (agent.yaml, env.yaml, deploy.yaml) for all 4 phases: p1_fine, p2_fine, p3_fine, p3b_fine</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Video labeling</td>
+<td>All 4 videos labeled with <code>label_video.py</code> (run name, model, terrain type, sim2sim status). Labels replaced originals.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="video-summary">Video Summary</h3>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Terrain</th>
+<th>Model</th>
+<th>Sim2Sim Result</th>
+<th>Local Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>p1_fine</td>
+<td>flat</td>
+<td>model_2800</td>
+<td>OK (0 falls, 0.2m)</td>
+<td><code>videos/p/p1_fine/p1_fine_m2800_sim2sim_mujoco.mp4</code></td>
+</tr>
+<tr>
+<td>p2_fine</td>
+<td>flat</td>
+<td>model_3000</td>
+<td>OK (0 falls, 4.0m)</td>
+<td><code>videos/p/p2_fine/p2_fine_m3000_sim2sim_mujoco.mp4</code></td>
+</tr>
+<tr>
+<td>p3_fine</td>
+<td>p3 gentle</td>
+<td>model_10700</td>
+<td>BROKEN (20 falls)</td>
+<td><code>videos/p/p3_fine/p3_fine_m10700_sim2sim_mujoco.mp4</code></td>
+</tr>
+<tr>
+<td>p3b_fine</td>
+<td>p3b intermediate</td>
+<td>model_14600</td>
+<td>BROKEN (0m movement)</td>
+<td><code>videos/p/p3b_fine/p3b_fine_m14600_sim2sim_mujoco.mp4</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="uncompleted-blocked_1">Uncompleted / Blocked</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Blocker</th>
+<th>Next Step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>p3b_stable training launch</td>
+<td>GPU 0-3 occupied by Justin's VLLM (~75GB each). torchrun assigns from GPU 0.</td>
+<td>Wait for Justin to finish, or use <code>--device cuda:4</code> single GPU launch</td>
+</tr>
+<tr>
+<td>2</td>
+<td>p3/p3b sim2sim gap</td>
+<td>Terrain-trained models (p3, p3b) fail in MuJoCo — fall or freeze. Flat models (p1, p2) work fine.</td>
+<td>Debug observation mismatch (contact forces, friction model differences), or record via Isaac Sim on cuda:4</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Isaac Lab videos for p1-p3b</td>
+<td>Not attempted — requires training to be stopped (Omniverse Kit grabs all 8 GPUs)</td>
+<td>Record when training is paused/stopped</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-findings">Key Findings</h3>
+<ul>
+<li><strong>sim2sim gap confirmed</strong>: Flat-trained policies (p1, p2) transfer to MuJoCo successfully. Terrain-trained policies (p3, p3b) do NOT transfer — they either fall repeatedly (p3: 20 falls) or freeze (p3b: 0m movement, 0 falls).</li>
+<li><strong>Root cause hypothesis</strong>: Terrain curriculum introduces observation dependencies on Isaac Sim-specific contact/friction physics that MuJoCo does not replicate identically. The policy learns to exploit Isaac Sim terrain features that don't exist in MuJoCo.</li>
+<li><strong>Terrain generation working</strong>: MuJoCo hfield injection via Python API works correctly for all terrain types (flat, p3 gentle, p3b intermediate).</li>
+</ul>
+<hr>
+<h2 id="session-mujoco">[Session] 本地 MuJoCo 键盘测试 + 相位感知部署</h2>
+<h3 id="completed_2">Completed</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>mujoco_manual.py 重构</td>
+<td>合并 terrain patch → 正式版 <code>sim2sim/mujoco_manual.py</code>。添加 <code>--phase</code> 参数 + <code>PHASE_TERRAIN</code> 映射（p1/p2→flat, p3→p3, p3b→p3b, p4→p3b）。<code>--terrain</code> 优先于 <code>--phase</code>。</td>
+</tr>
+<tr>
+<td>2</td>
+<td>yaml.safe_load 修复</td>
+<td><code>yaml.safe_load</code> → <code>yaml.unsafe_load</code>，修复 deploy.yaml 中 <code>!!python/object/apply:builtins.slice</code> 解析失败。</td>
+</tr>
+<tr>
+<td>3</td>
+<td>MUJOCO_GL 平台兼容</td>
+<td>Windows 不设 <code>MUJOCO_GL=egl</code>（仅 Linux 需要），修复 Windows 启动报错。</td>
+</tr>
+<tr>
+<td>4</td>
+<td>PD gains 修复</td>
+<td><strong>Root cause</strong>: 训练已用 IdealPDActuator（显式 PD），跟 MuJoCo 一样，不需要 30% KD boost。之前硬编码的 DEFAULT_KD [5.2, 5.2, 6.5, 3.9] 是旧 ImplicitActuator 时代的补偿。<strong>Fix</strong>: KP/KD 从 deploy.yaml 加载（[4.0, 4.0, 5.0, 3.0]），default_joint_pos 硬编码（deploy.yaml 导出 joint 顺序与 MuJoCo 不匹配）。</td>
+</tr>
+<tr>
+<td>5</td>
+<td>本地 p2_fine 键盘测试</td>
+<td><strong>结果</strong>: 150+ 秒仅 1 次摔倒，z≈0.66 稳定站立。对比修复前 256 次/200 秒，大幅改善。</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Viewer 问题</td>
+<td>MuJoCo viewer 未能弹出（headless 模式运行）。已加错误打印，待下次调试。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_1">测试结果</h3>
+<table>
+<thead>
+<tr>
+<th>测试</th>
+<th>Phase</th>
+<th>地形</th>
+<th>结果</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>p2_fine 修复前</td>
+<td>p2</td>
+<td>flat</td>
+<td>256 falls / 200s</td>
+<td>KD=5.2 (30% boost)，deploy.yaml 覆盖后反而更差</td>
+</tr>
+<tr>
+<td>p2_fine 修复后</td>
+<td>p2</td>
+<td>flat</td>
+<td>1 fall / 150s</td>
+<td>KD=4.0 (训练原值)，稳定站立</td>
+</tr>
+</tbody>
+</table>
+<h3 id="bug-fixes">Bug Fixes</h3>
+<table>
+<thead>
+<tr>
+<th>Bug</th>
+<th>Root Cause</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>YAML 解析失败</td>
+<td><code>yaml.safe_load</code> 不支持 <code>!!python/object/apply:builtins.slice</code></td>
+<td>→ <code>yaml.unsafe_load</code></td>
+</tr>
+<tr>
+<td>Windows MUJOCO_GL 报错</td>
+<td>EGL 仅 Linux 支持，Windows 应使用默认 wgl</td>
+<td>添加 <code>os.name != "nt"</code> 判断</td>
+</tr>
+<tr>
+<td>机器人反复摔倒</td>
+<td>DEFAULT_KD 硬编码 30% boost (5.2)，但训练已用 IdealPD (显式 PD)，boost 反而有害</td>
+<td>KP/KD 从 deploy.yaml 加载，不 boost</td>
+</tr>
+<tr>
+<td>MuJoCo viewer 不弹出</td>
+<td><code>launch_passive()</code> 异常被静默吞掉</td>
+<td>加 <code>as e</code> 打印具体错误</td>
+</tr>
+</tbody>
+</table>
+<h3 id="files-modified_1">Files Modified</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mujoco_terrain_patch.py</code> → <code>sim2sim/mujoco_manual.py</code></td>
+<td>合并重构：--phase 参数、yaml 修复、MUJOCO_GL 修复、PD gains 修复</td>
+</tr>
+<tr>
+<td><code>sim2sim/mujoco_manual.py</code> (本地)</td>
+<td>新建</td>
+</tr>
+<tr>
+<td><code>magiclab_rl_lab/sim2sim/mujoco_manual.py</code> (RTX 镜像)</td>
+<td>同步更新</td>
+</tr>
+</tbody>
+</table>
+<h3 id="next-steps">Next Steps</h3>
+<ul>
+<li>[ ] 调试 MuJoCo viewer 不弹出问题（打印具体异常）</li>
+<li>[ ] 测试 --phase p3b + 地形键盘控制</li>
+<li>[ ] 上传到 RTX: <code>scp sim2sim/mujoco_manual.py phh@192.168.120.155:~/magiclab_rl_lab/sim2sim/</code></li>
+</ul>
+<hr>
+<h2 id="1730-session-summary-mujoco-csv">[17:30] Session Summary — MuJoCo 键盘/CSV/分析管线完整开发</h2>
+<h3 id="completed_3">Completed</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>WASD→箭头键迁移</td>
+<td>MuJoCo Viewer WASD 与内置相机控制冲突。改为 GLFW 箭头键 (265=UP, 264=DOWN, 263=LEFT, 262=RIGHT)。msvcrt 后备也支持箭头键。<code>Files: sim2sim/mujoco_manual.py</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Viewer 面板控制</td>
+<td><code>launch_passive</code> 默认显示左右面板（不做 auto-hide）。Tab 键切换左面板，右面板点击箭头折叠。<code>Files: sim2sim/mujoco_manual.py</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>CSV 日志系统</td>
+<td><code>--csv</code> flag (<code>nargs='?', const='auto'</code>)。裸 <code>--csv</code> 自动命名 <code>logs/p/{phase}/{phase}_{timestamp}.csv</code>，<code>--csv path.csv</code> 自定义路径。50 列：step, time, x/y/z, 12 qpos, 12 qvel, 12 tau, 12 action, 3 cmd, fall。<code>Files: sim2sim/mujoco_manual.py</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>分析脚本 analyze_sim_log.py</td>
+<td>生成 6 张图：01_trajectory, 02_torques, 03_torque_histogram, 04_joint_angles, 05_actions, 06_velocity_height。输出到 CSV 同级 <code>plots/</code> 目录。<code>Files: scripts/analyze_sim_log.py</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>目录结构重组</td>
+<td><code>logs/</code> 扁平目录 → <code>logs/p/&lt;sub_phase&gt;/</code> 分阶段组织。移动已有 CSV 和图到新路径。</td>
+</tr>
+<tr>
+<td>6</td>
+<td>GBK 编码修复</td>
+<td>analyze_sim_log.py 中 Unicode 字符在 Windows GBK 终端报错。<code>Fix</code>: <code>✓</code> → <code>[OK]</code>, <code>⚠</code> → <code>[!]</code>。<code>Files: scripts/analyze_sim_log.py</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>p2_fine --csv 测试</td>
+<td>7243 步 / 25.5s，0.06% fall rate，12m 前进。CSV + 6 图 + LLM 数据分析全流程验证通过。CSV: <code>logs/p/p2_fine/p2_fine_20260510_172605.csv</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td>踝关节非对称分析</td>
+<td>发现策略学到的固定非对称：ank_p L=9.6 vs R=17.3 N·m (ratio 0.55)。4 个时间段恒定，不随转向变化。原因：角度偏差 1-2° 经 PD 放大。默认关节角完全对称，非对称来自策略本身。</td>
+</tr>
+<tr>
+<td>9</td>
+<td>RTX 同步</td>
+<td>mujoco_manual.py 和 analyze_sim_log.py 同步到 RTX 镜像。<code>Files: magiclab_rl_lab/sim2sim/mujoco_manual.py, magiclab_rl_lab/scripts/analyze_sim_log.py</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td>文档更新</td>
+<td><code>docs/local_mujoco_keyboard_guide.md</code> 更新：箭头键控制表、Tab 面板切换、训练指标查看方式。</td>
+</tr>
+</tbody>
+</table>
+<h3 id="bug-fixes_1">Bug Fixes</h3>
+<table>
+<thead>
+<tr>
+<th>Bug</th>
+<th>Root Cause</th>
+<th>Fix</th>
+<th>Files</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WASD 触发 MuJoCo 相机控制</td>
+<td>GLFW WASD 与 MuJoCo 内置 WASD 冲突</td>
+<td>改用箭头键 GLFW 265/264/263/262</td>
+<td><code>mujoco_manual.py</code></td>
+</tr>
+<tr>
+<td>GBK UnicodeEncodeError</td>
+<td>Windows 终端不支持 ✓ ⚠ 字符</td>
+<td>替换为 [OK] [!]</td>
+<td><code>analyze_sim_log.py</code></td>
+</tr>
+<tr>
+<td>auto-hide 面板后无法恢复</td>
+<td>设置了 show_left_ui=False</td>
+<td>改为默认显示，Tab 手动切换</td>
+<td><code>mujoco_manual.py</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="analysis-results-p2_fine-7243-steps">Analysis Results (p2_fine, 7243 steps)</h3>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Duration</td>
+<td>25.5s @ 50Hz</td>
+</tr>
+<tr>
+<td>Distance</td>
+<td>12.0m forward, 6.4m lateral (keyboard turns)</td>
+</tr>
+<tr>
+<td>Falls</td>
+<td>4 (0.06%)</td>
+</tr>
+<tr>
+<td>Mean torque</td>
+<td>12.2 N·m, max 68.0 N·m</td>
+</tr>
+<tr>
+<td>Saturation</td>
+<td>0% (&gt;100 N·m)</td>
+</tr>
+<tr>
+<td>Height</td>
+<td>0.645m ± 0.018m</td>
+</tr>
+<tr>
+<td>Action jitter</td>
+<td>0.190 mean, 9.84 max</td>
+</tr>
+<tr>
+<td>Ankle pitch symmetry</td>
+<td>L/R ratio 0.55 [!]</td>
+</tr>
+</tbody>
+</table>
+<h3 id="uncompleted-blocked_2">Uncompleted / Blocked</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Blocker</th>
+<th>Next Step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Skill 文档更新 (--csv flag)</td>
+<td>Skill markdown 未记录 --csv 参数和箭头键</td>
+<td>更新 gpu-train skill --local_play 部分</td>
+</tr>
+<tr>
+<td>2</td>
+<td>长时间 --csv 测试</td>
+<td>仅测试 7243 步</td>
+<td>跑 10000+ 步测试，验证大量数据下的分析稳定性</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Git push</td>
+<td>未 commit/push 本地修改</td>
+<td>整理 commit 并 push</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-decisions_1">Key Decisions</h3>
+<ul>
+<li><strong>箭头键替代 WASD</strong>: 彻底避免与 MuJoCo Viewer 内置快捷键冲突</li>
+<li><strong>CSV 直接分析优于图片分析</strong>: 精确、快速，无需 MCP image analysis</li>
+<li><strong>logs/p/<sub_phase>/ 结构</strong>: 按阶段组织 CSV 和分析图，避免扁平目录混乱</li>
+<li><strong>策略非对称不修复</strong>: ankle pitch ratio 0.55 是 RL 策略特性，平地影响小（0.06% fall），rough terrain 时监控</li>
+</ul>
+    <footer>Generated from training_log_2026-05-10.md</footer>
+  </main>
+</body>
+</html>

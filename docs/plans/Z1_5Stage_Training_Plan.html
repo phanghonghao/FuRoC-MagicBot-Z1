@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MagicBot Z1 Locomotion 训练规划</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="magicbot-z1-locomotion">MagicBot Z1 Locomotion 训练规划</h1>
+<blockquote>
+<p>从最基础到最困难的分阶段训练策略、参数配置与预期训练量。</p>
+<p>硬件：RTX 6000D (85GB)，16384 envs，单次训练约 28-35 小时 / 50K 迭代。</p>
+</blockquote>
+<hr>
+<h2 id="1">1. 机器人参数</h2>
+<h3 id="11-12dof">1.1 关节布局（12DOF）</h3>
+<pre><code>左腿: hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll
+右腿: hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll
+</code></pre>
+<h3 id="12-pd">1.2 PD 增益与默认姿态</h3>
+<table>
+<thead>
+<tr>
+<th>关节</th>
+<th>KP</th>
+<th>KD</th>
+<th>默认位置 (rad)</th>
+<th>Armature</th>
+<th>力矩限制 (N·m)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hip_pitch</td>
+<td>100</td>
+<td>4</td>
+<td>-0.35</td>
+<td>0.02863</td>
+<td>120</td>
+</tr>
+<tr>
+<td>hip_roll</td>
+<td>100</td>
+<td>4</td>
+<td>0</td>
+<td>0.02863</td>
+<td>120</td>
+</tr>
+<tr>
+<td>hip_yaw</td>
+<td>100</td>
+<td>4</td>
+<td>0</td>
+<td>0.02863</td>
+<td>120</td>
+</tr>
+<tr>
+<td>knee</td>
+<td>150</td>
+<td>5</td>
+<td>0.7</td>
+<td>0.02863</td>
+<td>120</td>
+</tr>
+<tr>
+<td>ankle_pitch</td>
+<td>60</td>
+<td>3</td>
+<td>-0.35</td>
+<td>0.01503</td>
+<td>50</td>
+</tr>
+<tr>
+<td>ankle_roll</td>
+<td>60</td>
+<td>3</td>
+<td>0</td>
+<td>0.01503</td>
+<td>50</td>
+</tr>
+</tbody>
+</table>
+<p>左右对称，初始高度 0.69m，action scale=0.25，步态周期 0.6s。</p>
+<h3 id="13">1.3 仿真参数</h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>物理步长</td>
+<td>0.002s (500Hz)</td>
+</tr>
+<tr>
+<td>控制频率</td>
+<td>50Hz (decimation=10)</td>
+</tr>
+<tr>
+<td>回合时长</td>
+<td>20s (1000步)</td>
+</tr>
+<tr>
+<td>Actor 输入</td>
+<td>47维 × 5帧 = 235维</td>
+</tr>
+<tr>
+<td>Actor 输出</td>
+<td>12维 (关节位置增量)</td>
+</tr>
+<tr>
+<td>网络结构</td>
+<td>[512, 256, 128] + ELU</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="2">2. 训练阶段规划</h2>
+<h3 id="_1">阶段总览</h3>
+<pre><code>Stage 1: 站立 ──→ Stage 2: 平地行走 ──→ Stage 3: 轻度地形 ──→ Stage 4: 粗糙地形 ──→ Stage 5: 复杂地形
+  (10K iter)        (20K iter)            (20K iter)            (30K iter)           (30K+ iter)
+</code></pre>
+<p>每个阶段在前一阶段的最佳 checkpoint 上继续训练（调整奖励和地形），不需要从零开始。</p>
+<hr>
+<h3 id="stage-1">Stage 1: 原地站立</h3>
+<p><strong>目标</strong>：机器人学会保持站立姿态，不摔倒，跟踪零速指令。</p>
+<p><strong>预期训练量</strong>：5,000 ~ 10,000 迭代（~2-4 小时）</p>
+<p><strong>关键配置变更</strong>（相对于基础配置）：</p>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>地形</td>
+<td>100% flat</td>
+<td>平地</td>
+</tr>
+<tr>
+<td>速度指令范围</td>
+<td>vx: [-0.1, 0.1]</td>
+<td>几乎不动</td>
+</tr>
+<tr>
+<td><code>stand_still</code> 权重</td>
+<td>-5.0 (↑)</td>
+<td>强化站立惩罚</td>
+</tr>
+<tr>
+<td><code>base_height</code> 权重</td>
+<td>-15.0 (↑)</td>
+<td>更强的高度保持</td>
+</tr>
+<tr>
+<td><code>flat_orientation</code> 权重</td>
+<td>-8.0 (↑)</td>
+<td>更强的姿态保持</td>
+</tr>
+<tr>
+<td><code>feet_clearance</code> 权重</td>
+<td>0.0 (关闭)</td>
+<td>站立不需要抬脚</td>
+</tr>
+<tr>
+<td><code>feet_contact_number</code> 权重</td>
+<td>0.0 (关闭)</td>
+<td>站立不需要步态</td>
+</tr>
+<tr>
+<td><code>track_lin_vel_xy</code> 权重</td>
+<td>0.5 (↓)</td>
+<td>速度跟踪不重要</td>
+</tr>
+<tr>
+<td>max_iterations</td>
+<td>10,000</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>成功标准</strong>：
+- time_out &gt; 95%
+- 机器人在推力扰动下恢复平衡
+- 基座高度稳定在 0.69m ± 0.02m</p>
+<hr>
+<h3 id="stage-2">Stage 2: 平地行走</h3>
+<p><strong>目标</strong>：在平地上学会跟踪速度指令，前进/后退/转弯，形成自然步态。</p>
+<p><strong>预期训练量</strong>：15,000 ~ 25,000 迭代（~10-17 小时）</p>
+<p><strong>关键配置</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>地形</td>
+<td>100% flat</td>
+<td>平地</td>
+</tr>
+<tr>
+<td>速度指令</td>
+<td>vx: [-0.5, 1.0], vy: [-0.5, 0.5], vyaw: [-0.5, 0.5]</td>
+<td>全范围速度</td>
+</tr>
+<tr>
+<td><code>track_lin_vel_xy</code> 权重</td>
+<td>1.0</td>
+<td>速度跟踪核心</td>
+</tr>
+<tr>
+<td><code>track_ang_vel_z</code> 权重</td>
+<td>0.5</td>
+<td>转弯跟踪</td>
+</tr>
+<tr>
+<td><code>feet_clearance</code> 权重</td>
+<td>1.0</td>
+<td>抬脚奖励</td>
+</tr>
+<tr>
+<td><code>feet_contact_number</code> 权重</td>
+<td>0.5</td>
+<td>正确着地</td>
+</tr>
+<tr>
+<td><code>stand_still</code> 权重</td>
+<td>-3.5</td>
+<td>正常站立惩罚</td>
+</tr>
+<tr>
+<td><code>base_height</code> 权重</td>
+<td>-10.0</td>
+<td>标准高度保持</td>
+</tr>
+<tr>
+<td><code>action_rate</code> 权重</td>
+<td>-0.05</td>
+<td>动作平滑度</td>
+</tr>
+<tr>
+<td><code>energy</code> 权重</td>
+<td>-2e-5</td>
+<td>能效</td>
+</tr>
+<tr>
+<td>max_iterations</td>
+<td>25,000</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>课程学习</strong>：速度指令从 [-0.1, 0.1] 逐步扩展到 [-0.5, 1.0]，由 <code>lin_vel_cmd_levels</code> 自动控制。</p>
+<p><strong>成功标准</strong>：
+- time_out &gt; 90%
+- 速度跟踪误差 &lt; 0.2 m/s
+- 步态自然、左右交替、无明显跛行
+- 前进速度可达 0.8 m/s</p>
+<hr>
+<h3 id="stage-3-gentle-terrain">Stage 3: 轻度地形（Gentle Terrain）</h3>
+<p><strong>目标</strong>：适应轻微起伏的地面，能在随机网格地形上行走。</p>
+<p><strong>预期训练量</strong>：15,000 ~ 25,000 迭代（~10-17 小时）</p>
+<p><strong>起始</strong>：从 Stage 2 最佳 checkpoint 继续。</p>
+<p><strong>关键配置变更</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>地形</td>
+<td>50% flat + 50% random_grid</td>
+<td>混合地形</td>
+</tr>
+<tr>
+<td><code>difficulty_range</code></td>
+<td>(0.0, 0.5)</td>
+<td>限制最大难度</td>
+</tr>
+<tr>
+<td><code>base_height</code> 权重</td>
+<td>-8.0 (↓)</td>
+<td>放宽高度约束（地形起伏）</td>
+</tr>
+<tr>
+<td><code>flat_orientation</code> 权重</td>
+<td>-3.0 (↓)</td>
+<td>允许轻微倾斜</td>
+</tr>
+<tr>
+<td><code>feet_clearance</code> 权重</td>
+<td>1.5 (↑)</td>
+<td>更强调抬脚（避免绊倒）</td>
+</tr>
+<tr>
+<td>域随机化 - 摩擦</td>
+<td>(0.3, 1.5) (↑)</td>
+<td>更大摩擦范围</td>
+</tr>
+<tr>
+<td>域随机化 - 推力</td>
+<td>±1.0 m/s (↑)</td>
+<td>更强扰动</td>
+</tr>
+<tr>
+<td>max_iterations</td>
+<td>20,000</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>成功标准</strong>：
+- 在 difficulty 0.3 的地形上 time_out &gt; 80%
+- 能跨过 3-5cm 高的障碍
+- 不因地面起伏而摔倒</p>
+<hr>
+<h3 id="stage-4-rough-terrain">Stage 4: 粗糙地形（Rough Terrain）</h3>
+<p><strong>目标</strong>：在高度复杂的地形上行走，包括楼梯、沟壑、方块障碍。</p>
+<p><strong>预期训练量</strong>：25,000 ~ 40,000 迭代（~17-28 小时）</p>
+<p><strong>起始</strong>：从 Stage 3 最佳 checkpoint 继续。</p>
+<p><strong>关键配置变更</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>地形</td>
+<td>20% flat + 30% random_grid + 20% stairs + 15% gap + 15% boxes</td>
+<td>全类型混合</td>
+</tr>
+<tr>
+<td><code>difficulty_range</code></td>
+<td>(0.0, 1.0)</td>
+<td>全难度</td>
+</tr>
+<tr>
+<td><code>base_height</code> 权重</td>
+<td>-5.0 (↓)</td>
+<td>进一步放宽</td>
+</tr>
+<tr>
+<td><code>flat_orientation</code> 权重</td>
+<td>-2.0 (↓)</td>
+<td>允许更大倾斜</td>
+</tr>
+<tr>
+<td><code>feet_clearance</code> 权重</td>
+<td>2.0 (↑)</td>
+<td>强调高抬脚</td>
+</tr>
+<tr>
+<td><code>undesired_contacts</code> 权重</td>
+<td>-2.0 (↑)</td>
+<td>避免膝盖着地</td>
+</tr>
+<tr>
+<td>域随机化 - 质量</td>
+<td>(0.5, 1.5) (↑)</td>
+<td>更大质量变化</td>
+</tr>
+<tr>
+<td>域随机化 - 推力</td>
+<td>±1.5 m/s (↑)</td>
+<td>强扰动</td>
+</tr>
+<tr>
+<td>max_iterations</td>
+<td>40,000</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>成功标准</strong>：
+- 在 difficulty 0.6 的地形上 time_out &gt; 70%
+- 能上 10cm 台阶
+- 能跨过 15cm 沟壑
+- 推力扰动后恢复</p>
+<hr>
+<h3 id="stage-5">Stage 5: 复杂地形 + 高速</h3>
+<p><strong>目标</strong>：全地形全速度，接近 Sim-to-Real 部署级别。</p>
+<p><strong>预期训练量</strong>：30,000 ~ 50,000 迭代（~20-35 小时）</p>
+<p><strong>起始</strong>：从 Stage 4 最佳 checkpoint 继续。</p>
+<p><strong>关键配置变更</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>地形</td>
+<td>全类型全难度</td>
+<td>含 rails（台阶）</td>
+</tr>
+<tr>
+<td>速度上限</td>
+<td>vx: [-1.0, 1.5]</td>
+<td>更高速</td>
+</tr>
+<tr>
+<td><code>feet_clearance</code> target</td>
+<td>0.12m (↑)</td>
+<td>更高抬脚</td>
+</tr>
+<tr>
+<td><code>energy</code> 权重</td>
+<td>-5e-5 (↑)</td>
+<td>控制能耗</td>
+</tr>
+<tr>
+<td><code>action_rate</code> 权重</td>
+<td>-0.1 (↑)</td>
+<td>更严平滑约束</td>
+</tr>
+<tr>
+<td>观测噪声</td>
+<td>加倍</td>
+<td>更鲁棒</td>
+</tr>
+<tr>
+<td>域随机化</td>
+<td>全面加强</td>
+<td>质量、摩擦、推力、延迟</td>
+</tr>
+<tr>
+<td>max_iterations</td>
+<td>50,000</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><strong>成功标准</strong>：
+- 在 difficulty 0.8+ 地形上 time_out &gt; 60%
+- 前进速度可达 1.2 m/s
+- 模拟真机传感器噪声下仍稳定</p>
+<hr>
+<h2 id="3-ppo">3. PPO 超参数</h2>
+<h3 id="31">3.1 基础配置（所有阶段通用）</h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>learning_rate</td>
+<td>1e-3</td>
+<td>自适应调整 (schedule=adaptive)</td>
+</tr>
+<tr>
+<td>gamma</td>
+<td>0.99</td>
+<td>折扣因子</td>
+</tr>
+<tr>
+<td>lam</td>
+<td>0.95</td>
+<td>GAE λ</td>
+</tr>
+<tr>
+<td>clip_param</td>
+<td>0.2</td>
+<td>PPO clip</td>
+</tr>
+<tr>
+<td>entropy_coef</td>
+<td>0.01</td>
+<td>探索系数</td>
+</tr>
+<tr>
+<td>desired_kl</td>
+<td>0.01</td>
+<td>目标 KL 散度</td>
+</tr>
+<tr>
+<td>num_steps_per_env</td>
+<td>24</td>
+<td>每次采集步数</td>
+</tr>
+<tr>
+<td>num_mini_batches</td>
+<td>4</td>
+<td>Mini-batch 数</td>
+</tr>
+<tr>
+<td>num_learning_epochs</td>
+<td>5</td>
+<td>数据重用次数</td>
+</tr>
+<tr>
+<td>max_grad_norm</td>
+<td>1.0</td>
+<td>梯度裁剪</td>
+</tr>
+<tr>
+<td>init_noise_std</td>
+<td>1.0</td>
+<td>初始策略噪声</td>
+</tr>
+<tr>
+<td>save_interval</td>
+<td>100</td>
+<td>每 100 次保存</td>
+</tr>
+<tr>
+<td>empirical_normalization</td>
+<td>False</td>
+<td>不做回报归一化</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32">3.2 调参原则</h3>
+<table>
+<thead>
+<tr>
+<th>原则</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每次只改 1 个参数</td>
+<td>同时改多个会导致崩溃（s2_stable 教训）</td>
+</tr>
+<tr>
+<td>不要改网络结构</td>
+<td>[512,256,128] 已验证有效</td>
+</tr>
+<tr>
+<td>不要盲目增大 num_envs</td>
+<td>16384 已用 ~15GB，需关注 VRAM</td>
+</tr>
+<tr>
+<td>entropy_coef 谨慎调</td>
+<td>过高→不收敛，过低→过早收敛</td>
+</tr>
+<tr>
+<td>learning_rate 保持 1e-3</td>
+<td>配合 adaptive schedule 自动调节</td>
+</tr>
+</tbody>
+</table>
+<h3 id="33">3.3 各阶段建议调整</h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>Stage 1-2</th>
+<th>Stage 3</th>
+<th>Stage 4-5</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>learning_rate</td>
+<td>1e-3</td>
+<td>5e-4 (可降)</td>
+<td>5e-4 ~ 1e-3</td>
+</tr>
+<tr>
+<td>entropy_coef</td>
+<td>0.01</td>
+<td>0.01</td>
+<td>0.008 (可降)</td>
+</tr>
+<tr>
+<td>action_rate 权重</td>
+<td>-0.05</td>
+<td>-0.08</td>
+<td>-0.1</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="4">4. 奖励函数参考</h2>
+<h3 id="41">4.1 权重速查表</h3>
+<table>
+<thead>
+<tr>
+<th>奖励项</th>
+<th>Stage 1</th>
+<th>Stage 2</th>
+<th>Stage 3</th>
+<th>Stage 4</th>
+<th>Stage 5</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>track_lin_vel_xy</td>
+<td>0.5</td>
+<td>1.0</td>
+<td>1.0</td>
+<td>1.0</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>track_ang_vel_z</td>
+<td>0.3</td>
+<td>0.5</td>
+<td>0.5</td>
+<td>0.5</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>alive</td>
+<td>0.15</td>
+<td>0.15</td>
+<td>0.15</td>
+<td>0.15</td>
+<td>0.15</td>
+</tr>
+<tr>
+<td>base_height</td>
+<td>-15.0</td>
+<td>-10.0</td>
+<td>-8.0</td>
+<td>-5.0</td>
+<td>-5.0</td>
+</tr>
+<tr>
+<td>flat_orientation</td>
+<td>-8.0</td>
+<td>-5.0</td>
+<td>-3.0</td>
+<td>-2.0</td>
+<td>-2.0</td>
+</tr>
+<tr>
+<td>dof_pos_limits</td>
+<td>-5.0</td>
+<td>-5.0</td>
+<td>-5.0</td>
+<td>-5.0</td>
+<td>-5.0</td>
+</tr>
+<tr>
+<td>stand_still</td>
+<td>-5.0</td>
+<td>-3.5</td>
+<td>-3.5</td>
+<td>-3.5</td>
+<td>-3.5</td>
+</tr>
+<tr>
+<td>base_lin_vel_z</td>
+<td>-2.0</td>
+<td>-2.0</td>
+<td>-2.0</td>
+<td>-2.0</td>
+<td>-2.0</td>
+</tr>
+<tr>
+<td>joint_deviation_legs</td>
+<td>-0.7</td>
+<td>-0.7</td>
+<td>-0.7</td>
+<td>-0.7</td>
+<td>-0.7</td>
+</tr>
+<tr>
+<td>action_rate</td>
+<td>-0.05</td>
+<td>-0.05</td>
+<td>-0.08</td>
+<td>-0.1</td>
+<td>-0.1</td>
+</tr>
+<tr>
+<td>feet_slide</td>
+<td>-0.2</td>
+<td>-0.2</td>
+<td>-0.3</td>
+<td>-0.5</td>
+<td>-0.5</td>
+</tr>
+<tr>
+<td>undesired_contacts</td>
+<td>-1.0</td>
+<td>-1.0</td>
+<td>-1.5</td>
+<td>-2.0</td>
+<td>-2.0</td>
+</tr>
+<tr>
+<td>feet_clearance</td>
+<td>0.0</td>
+<td>1.0</td>
+<td>1.5</td>
+<td>2.0</td>
+<td>2.0</td>
+</tr>
+<tr>
+<td>feet_contact_number</td>
+<td>0.0</td>
+<td>0.5</td>
+<td>0.5</td>
+<td>0.5</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>energy</td>
+<td>-2e-5</td>
+<td>-2e-5</td>
+<td>-2e-5</td>
+<td>-5e-5</td>
+<td>-5e-5</td>
+</tr>
+<tr>
+<td>joint_vel</td>
+<td>-0.001</td>
+<td>-0.001</td>
+<td>-0.001</td>
+<td>-0.001</td>
+<td>-0.001</td>
+</tr>
+<tr>
+<td>joint_acc</td>
+<td>-2.5e-7</td>
+<td>-2.5e-7</td>
+<td>-2.5e-7</td>
+<td>-2.5e-7</td>
+<td>-2.5e-7</td>
+</tr>
+</tbody>
+</table>
+<h3 id="42">4.2 调整逻辑</h3>
+<ul>
+<li><strong>base_height</strong>：随地形复杂度递减。平地要求精确高度，复杂地形允许浮动</li>
+<li><strong>flat_orientation</strong>：同上，复杂地形需要身体倾斜来保持平衡</li>
+<li><strong>feet_clearance</strong>：随地形复杂度递增。复杂地形必须高抬脚避免绊倒</li>
+<li><strong>action_rate</strong>：随阶段递增。后期要求更平滑的步态</li>
+<li><strong>Stage 1 关闭步态奖励</strong>：站立阶段不需要步态相关奖励</li>
+</ul>
+<hr>
+<h2 id="5">5. 地形配置</h2>
+<h3 id="51">5.1 地形类型</h3>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>配置类</th>
+<th>特点</th>
+<th>适用阶段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>平地</td>
+<td><code>MeshPlaneTerrainCfg</code></td>
+<td>完全平坦</td>
+<td>1-2</td>
+</tr>
+<tr>
+<td>随机网格</td>
+<td><code>MeshRandomGridTerrainCfg</code></td>
+<td>随机高度起伏</td>
+<td>3-4</td>
+</tr>
+<tr>
+<td>金字塔楼梯</td>
+<td><code>MeshPyramidStairsTerrainCfg</code></td>
+<td>上下楼梯</td>
+<td>4-5</td>
+</tr>
+<tr>
+<td>沟壑</td>
+<td><code>MeshGapTerrainCfg</code></td>
+<td>间隙</td>
+<td>4-5</td>
+</tr>
+<tr>
+<td>方块障碍</td>
+<td><code>MeshRepeatedBoxesTerrainCfg</code></td>
+<td>散落方块</td>
+<td>4-5</td>
+</tr>
+<tr>
+<td>台阶</td>
+<td><code>MeshRailsTerrainCfg</code></td>
+<td>横向台阶</td>
+<td>5</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52">5.2 各阶段地形配比</h3>
+<pre><code class="language-python"># Stage 1-2: 纯平地
+sub_terrains = {&quot;flat&quot;: MeshPlaneTerrainCfg(proportion=1.0)}
+
+# Stage 3: 轻度混合
+sub_terrains = {
+    &quot;flat&quot;: MeshPlaneTerrainCfg(proportion=0.5),
+    &quot;random_grid&quot;: MeshRandomGridTerrainCfg(proportion=0.5),
+}
+
+# Stage 4: 全类型混合
+sub_terrains = {
+    &quot;flat&quot;: MeshPlaneTerrainCfg(proportion=0.2),
+    &quot;random_grid&quot;: MeshRandomGridTerrainCfg(proportion=0.3),
+    &quot;pyramid_stairs&quot;: MeshPyramidStairsTerrainCfg(proportion=0.2),
+    &quot;gap&quot;: MeshGapTerrainCfg(proportion=0.15),
+    &quot;boxes&quot;: MeshRepeatedBoxesTerrainCfg(proportion=0.15),
+}
+
+# Stage 5: 含高难度台阶
+sub_terrains = {
+    &quot;flat&quot;: MeshPlaneTerrainCfg(proportion=0.1),
+    &quot;random_grid&quot;: MeshRandomGridTerrainCfg(proportion=0.2),
+    &quot;pyramid_stairs&quot;: MeshPyramidStairsTerrainCfg(proportion=0.2),
+    &quot;gap&quot;: MeshGapTerrainCfg(proportion=0.15),
+    &quot;boxes&quot;: MeshRepeatedBoxesTerrainCfg(proportion=0.15),
+    &quot;rails&quot;: MeshRailsTerrainCfg(proportion=0.2),
+}
+</code></pre>
+<h3 id="53">5.3 地形生成参数</h3>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>size</td>
+<td>(8.0, 8.0)</td>
+<td>每块地形 8m×8m</td>
+</tr>
+<tr>
+<td>num_rows</td>
+<td>9</td>
+<td>9 行难度等级（课程学习）</td>
+</tr>
+<tr>
+<td>num_cols</td>
+<td>21</td>
+<td>21 列环境宽度</td>
+</tr>
+<tr>
+<td>border_width</td>
+<td>20.0</td>
+<td>外围安全区</td>
+</tr>
+<tr>
+<td>horizontal_scale</td>
+<td>0.1</td>
+<td>水平分辨率 0.1m</td>
+</tr>
+<tr>
+<td>vertical_scale</td>
+<td>0.005</td>
+<td>垂直分辨率 5mm</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="6">6. 域随机化</h2>
+<h3 id="61">6.1 各阶段随机化强度</h3>
+<table>
+<thead>
+<tr>
+<th>随机化项</th>
+<th>Stage 1-2</th>
+<th>Stage 3</th>
+<th>Stage 4-5</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>静摩擦</td>
+<td>(0.3, 1.0)</td>
+<td>(0.3, 1.5)</td>
+<td>(0.2, 2.0)</td>
+</tr>
+<tr>
+<td>动摩擦</td>
+<td>(0.3, 1.0)</td>
+<td>(0.3, 1.5)</td>
+<td>(0.2, 2.0)</td>
+</tr>
+<tr>
+<td>骨盆质量</td>
+<td>(0.7, 1.3)</td>
+<td>(0.6, 1.4)</td>
+<td>(0.5, 1.5)</td>
+</tr>
+<tr>
+<td>全身质量</td>
+<td>(0.7, 1.3)</td>
+<td>(0.6, 1.4)</td>
+<td>(0.5, 1.5)</td>
+</tr>
+<tr>
+<td>推力 vx/vy</td>
+<td>±0.5 m/s</td>
+<td>±1.0 m/s</td>
+<td>±1.5 m/s</td>
+</tr>
+<tr>
+<td>初始位置</td>
+<td>±0.5m</td>
+<td>±0.5m</td>
+<td>±0.5m</td>
+</tr>
+<tr>
+<td>初始速度</td>
+<td>±0.5</td>
+<td>±0.5</td>
+<td>±0.5</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="7">7. 训练监控指标</h2>
+<h3 id="71">7.1 关键指标与健康阈值</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>健康</th>
+<th>警告</th>
+<th>危险</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>time_out (%)</td>
+<td>&gt; 90%</td>
+<td>&lt; 80%</td>
+<td>&lt; 50%</td>
+</tr>
+<tr>
+<td>bad_orientation (%)</td>
+<td>&lt; 5%</td>
+<td>&gt; 20%</td>
+<td>&gt; 50%</td>
+</tr>
+<tr>
+<td>episode_length (步)</td>
+<td>&gt; 900</td>
+<td>&lt; 500</td>
+<td>&lt; 100</td>
+</tr>
+<tr>
+<td>mean_reward</td>
+<td>&gt; 30</td>
+<td>&lt; 10</td>
+<td>&lt; 0</td>
+</tr>
+<tr>
+<td>action_rate</td>
+<td>-0.2 ~ -0.5</td>
+<td>&gt; -1.0</td>
+<td>&gt; -5.0</td>
+</tr>
+<tr>
+<td>value_loss</td>
+<td>0.01 ~ 0.1</td>
+<td>&gt; 1.0</td>
+<td>&gt; 100</td>
+</tr>
+</tbody>
+</table>
+<h3 id="72">7.2 各阶段预期指标</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>Stage 1 (10K)</th>
+<th>Stage 2 (25K)</th>
+<th>Stage 3 (20K)</th>
+<th>Stage 4 (40K)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>time_out</td>
+<td>98%</td>
+<td>92%</td>
+<td>80%</td>
+<td>70%</td>
+</tr>
+<tr>
+<td>mean_reward</td>
+<td>40+</td>
+<td>35+</td>
+<td>25+</td>
+<td>20+</td>
+</tr>
+<tr>
+<td>episode_length</td>
+<td>1000</td>
+<td>950+</td>
+<td>800+</td>
+<td>700+</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="8">8. 已知问题与规避策略</h2>
+<h3 id="81-action_rate">8.1 action_rate 正反馈崩塌</h3>
+<p><strong>现象</strong>：训练 25K-35K 时 action_rate 突然飙升，value_loss 爆炸，训练崩塌。</p>
+<p><strong>已验证</strong>：s4_gentle_terrain model_49999 的 raw actions 均值 ~109（正常应 &lt; 5），策略发散。</p>
+<p><strong>规避策略</strong>：
+- 使用 L1 (<code>action_rate_l1</code>) 而非 L2 — 线性增长不会爆炸
+- 训练早期用较小权重 (-0.05)，后期逐步增大
+- 监控 value_loss，超过 1.0 时考虑降低学习率或停止</p>
+<h3 id="82">8.2 超参批量修改崩溃</h3>
+<p><strong>已验证</strong>：s2_stable 同时改 6 个超参 → 100 迭代内崩溃。每次只改 1 个参数。</p>
+<h3 id="83">8.3 地形难度过早引入</h3>
+<p><strong>已验证</strong>：s4_terrain（高难度地形）在机器人还没学会走路时就引入 → 100% 失败。必须先平地训练。</p>
+<h3 id="84-checkpoint">8.4 Checkpoint 选择</h3>
+<ul>
+<li>不一定最后的模型最好（model_49999 发散，model_3700 更稳定）</li>
+<li>建议每 500 迭代评估一次，选 reward 最高且 action_rate 正常的 checkpoint</li>
+<li>最佳 checkpoint 窗口通常在 reward 曲线峰值附近</li>
+</ul>
+<hr>
+<h2 id="9">9. 历史训练记录</h2>
+<blockquote>
+<p>更新时间：2026-05-06。通过 <code>/gpu-train</code> 获取最新状态。</p>
+</blockquote>
+<h3 id="91">9.1 训练链</h3>
+<pre><code>s1_flat (m3861, 47.33, flat)
+  └──→ s2_gentle (m47862, 47.06, gentle) ← 历史最佳
+         └──→ s3_rough_l2 (m32790, 38.04, rough) ← 粗地形最佳
+                └──→ s4_full_terrain (m5155→m15000, 37.73, full terrain) ← 已停止
+</code></pre>
+<h3 id="92-run">9.2 各 Run 详情</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Run</th>
+<th>迭代</th>
+<th>最佳模型</th>
+<th>Best Reward</th>
+<th>状态</th>
+<th>教训</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>s1_flat</td>
+<td>36,429</td>
+<td>m3861</td>
+<td>47.33</td>
+<td>OVERFITTING</td>
+<td>后续阶段 resume 起点；原始 checkpoint 已清理，仅保留 JIT</td>
+</tr>
+<tr>
+<td>2</td>
+<td>s2_gentle</td>
+<td>49,999</td>
+<td><strong>m47862</strong></td>
+<td><strong>47.06</strong></td>
+<td>HEALTHY</td>
+<td>历史最佳；L2 action_rate 尾部崩塌（model_49999 raw actions ~109）</td>
+</tr>
+<tr>
+<td>3</td>
+<td>s3_rough_l2</td>
+<td>41,590</td>
+<td>m32790</td>
+<td>38.04</td>
+<td>OVERFITTING</td>
+<td>action_rate 崩塌到 -167；原始 checkpoint 已清理，仅保留 JIT</td>
+</tr>
+<tr>
+<td>4</td>
+<td>s4_full_terrain</td>
+<td>15,000</td>
+<td>m5155</td>
+<td>37.73</td>
+<td>已停止</td>
+<td>4-GPU orchestrator，全类型地形</td>
+</tr>
+</tbody>
+</table>
+<h3 id="93">9.3 仿真视频记录</h3>
+<table>
+<thead>
+<tr>
+<th>Run</th>
+<th>模型</th>
+<th>Isaac Sim 视频</th>
+<th>MuJoCo 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>s1_flat</td>
+<td>m3861 (JIT)</td>
+<td>s1_flat_model3861_isaaclab.mp4</td>
+<td>s1_flat_m3861_sim2sim_mujoco.mp4</td>
+</tr>
+<tr>
+<td>s2_gentle</td>
+<td>m47900</td>
+<td>s2_gentle_model47900_isaaclab.mp4</td>
+<td>s2_gentle_m47900_sim2sim_mujoco.mp4</td>
+</tr>
+<tr>
+<td>s3_rough_l2</td>
+<td>m32800 (JIT)</td>
+<td>s3_rough_l2_model32800_isaaclab.mp4</td>
+<td>s3_rough_l2_m32790_sim2sim_mujoco.mp4</td>
+</tr>
+</tbody>
+</table>
+<p>视频本地路径：<code>Magicbot_Z1/videos/&lt;run_name&gt;/</code></p>
+<h3 id="94">9.4 已知问题</h3>
+<ul>
+<li><strong>action_rate L2 崩塌</strong>：s2_gentle 和 s3_rough_l2 尾部出现。使用 L1 替代 L2 可规避</li>
+<li><strong>超参批量修改</strong>：s2_stable 同时改 6 个超参 → 100 iter 内崩溃。每次只改 1 个</li>
+<li><strong>地形难度过早引入</strong>：s4_terrain 在机器人未学会走路时引入高难度 → 全失败</li>
+<li><strong>Checkpoint 不等于最后模型</strong>：model_49999 发散，需在 reward 峰值附近选择</li>
+</ul>
+<h3 id="95-2026-05-12">9.5 左右关节不对称修复 (2026-05-12)</h3>
+<p><strong>问题</strong>：P3/P3b 训练后左右关节角严重不对称（hip_pitch 偏移 0.37 rad, hip_yaw 0.52 rad, knee_pitch 0.39 rad）。</p>
+<p><strong>原因</strong>：reward 函数中 <code>joint_deviation_l1</code> 只惩罚各关节偏离默认值，从未约束左右对称。平地（P2）最优步态碰巧对称，但地形训练（P3+）暴露了这个问题。</p>
+<p><strong>方案</strong>：
+- 新增 <code>joint_mirror</code> reward（<code>magiclab_rl_lab/tasks/locomotion/mdp/rewards.py</code> 已有实现），weight=-0.5
+- 从 P3b Fine checkpoint 续训 5000 步（<code>p3b_fine_symmetry</code> sub-phase）
+- 地形配置回退到与 p3 类似（70% flat + 30% random_grid），LR 降至 1e-4</p>
+<p><strong>预期</strong>：左右关节偏移降至 &lt;0.05 rad，步态恢复对称，同时保持地形适应能力。</p>
+<h3 id="96-2026-05-04">9.6 磁盘清理记录 (2026-05-04)</h3>
+<p>训练日志：14GB → 5.5GB。s1_flat、s1_flat_retry、s1_stable、s3_rough_l2、s1_highspeed、s3_rough_fail 的中间 checkpoint 已删除（保留 JIT policy）。s2_gentle 和 s3_rough_l1_4gpu 全部保留。</p>
+<h3 id="97-todo">9.7 TODO</h3>
+<ul>
+<li>[ ] <strong>s4_full_terrain 评估</strong> → 决定下一步</li>
+<li>[ ] <strong>多机器人可视化</strong>：Play/录制视频时同时显示多个机器人（num_envs&gt;1 俯瞰模式）</li>
+</ul>
+    <footer>Generated from Z1_5Stage_Training_Plan.md</footer>
+  </main>
+</body>
+</html>

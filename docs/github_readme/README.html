@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FuRoC-MagicBot-Z1</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="furoc-magicbot-z1">FuRoC-MagicBot-Z1</h1>
+<p>RL locomotion training pipeline for <strong>MagicBot Z1 12DOF bipedal robot</strong>, built on Isaac Lab + rsl_rl.</p>
+<h2 id="pipeline-overview">Pipeline Overview</h2>
+<p align="center">
+  <img src="docs/github_readme/pipeline_flow.svg" alt="5-Phase Curriculum Learning Pipeline" width="95%">
+</p>
+
+<blockquote>
+<p><strong>5-phase curriculum learning</strong> with terrain progression: Flat → Gentle → Intermediate → Rough → Full. Each phase resumes from the best checkpoint of the previous phase.</p>
+</blockquote>
+<h2 id="demo">Demo</h2>
+<h3 id="p1p2-pipeline-demo">P1–P2 Pipeline Demo</h3>
+<p align="center">
+  <img src="docs/github_readme/pipeline_p1p2_demo.gif" alt="P1-P2 Pipeline Demo (Isaac Lab + MuJoCo)" width="60%">
+</p>
+
+<blockquote>
+<p>P1 Coarse → P1 Fine → P2 Coarse → P2 Fine. Left column: Isaac Lab simulation. Right column: MuJoCo sim2sim validation.</p>
+</blockquote>
+<h3 id="p3-gentle-terrain-walking">P3 Gentle Terrain Walking</h3>
+<p align="center">
+  <img src="docs/github_readme/p3_demo.gif" alt="P3 Fine Isaac Lab Demo" width="45%">
+  &nbsp;
+  <img src="docs/github_readme/p3_sim2sim_mujoco.gif" alt="P3 Fine MuJoCo Sim2Sim" width="45%">
+</p>
+
+<blockquote>
+<p><strong>Left</strong>: P3 Fine policy in Isaac Lab (gentle terrain). <strong>Right</strong>: Sim2sim transfer to MuJoCo — robot walks on flat ground in a different simulator.</p>
+</blockquote>
+<h3 id="p3b-intermediate-terrain">P3b Intermediate Terrain</h3>
+<p align="center">
+  <img src="docs/github_readme/p3b_demo.gif" alt="P3b Fine MuJoCo Sim2Sim" width="45%">
+</p>
+
+<blockquote>
+<p>P3b Fine policy deployed to MuJoCo. Trained on mixed terrain (flat + grid + stairs + boxes), successfully transfers to flat-ground sim2sim.</p>
+</blockquote>
+<h2 id="results">Results</h2>
+<h3 id="curriculum-reward-trends">Curriculum Reward Trends</h3>
+<p align="center">
+  <img src="docs/github_readme/curriculum_reward_trends.png" alt="Curriculum Reward Trends" width="90%">
+</p>
+
+<blockquote>
+<p>Reward curves across sub-phases. P1 (flat terrain, bootstrap → standing), P2 (flat, velocity tracking). Each phase resumes from the best checkpoint of the previous phase.</p>
+</blockquote>
+<h3 id="p2-fine-reward-decomposition">P2 Fine Reward Decomposition</h3>
+<p align="center">
+  <img src="docs/github_readme/reward_trend_p2_fine.png" alt="P2 Fine Reward Trend" width="45%">
+  &nbsp;
+  <img src="docs/github_readme/reward_decomposition_p2_fine.png" alt="P2 Fine Reward Decomposition" width="45%">
+</p>
+
+<blockquote>
+<p><strong>Left</strong>: P2 Fine total reward trend. <strong>Right</strong>: Individual reward component decomposition — velocity tracking, orientation, base height, foot contact, action rate penalty, and torque penalty.</p>
+</blockquote>
+<h3 id="p3-fine-results">P3 Fine Results</h3>
+<p align="center">
+  <img src="docs/github_readme/reward_trend_p3_fine.png" alt="P3 Fine Reward Trend" width="45%">
+  &nbsp;
+  <img src="docs/github_readme/reward_decomposition_p3_fine.png" alt="P3 Fine Reward Decomposition" width="45%">
+</p>
+
+<blockquote>
+<p><strong>Left</strong>: P3 Fine total reward trend (gentle terrain). <strong>Right</strong>: Reward decomposition showing terrain adaptation components.</p>
+</blockquote>
+<h3 id="p3b-fine-results">P3b Fine Results</h3>
+<p align="center">
+  <img src="docs/github_readme/reward_trend_p3b_fine.png" alt="P3b Fine Reward Trend" width="45%">
+  &nbsp;
+  <img src="docs/github_readme/reward_decomposition_p3b_fine.png" alt="P3b Fine Reward Decomposition" width="45%">
+</p>
+
+<blockquote>
+<p><strong>Left</strong>: P3b Fine total reward trend (intermediate terrain). <strong>Right</strong>: Reward decomposition with stairs/boxes adaptation.</p>
+</blockquote>
+<h3 id="left-right-joint-asymmetry">Left-Right Joint Asymmetry</h3>
+<p align="center">
+  <img src="docs/github_readme/joint_asymmetry_p2_vs_p3.png" alt="Left vs Right Joint Angles P2 vs P3" width="95%">
+</p>
+
+<blockquote>
+<p>Time-series of left (blue) vs right (red) joint angles. <strong>Top row (P2 Fine, flat terrain)</strong>: joints are roughly symmetric (offset &lt; 0.03 rad). <strong>Bottom row (P3 Coarse, gentle terrain)</strong>: significant offset appears — hip pitch (−0.37 rad), hip yaw (−0.52 rad), knee pitch (+0.39 rad).</p>
+</blockquote>
+<p align="center">
+  <img src="docs/github_readme/joint_asymmetry_barplot.png" alt="Joint Asymmetry Bar Plot" width="85%">
+</p>
+
+<blockquote>
+<p>Quantitative comparison of left-right asymmetry across phases. P3 Coarse shows 10–20x larger mean offset than P2 Fine.</p>
+<p><strong>Root cause</strong>: The reward function only penalizes each joint's deviation from its default position (<code>joint_deviation_l1</code>), but never enforces left-right correspondence. On flat terrain (P2) the optimal gait happens to be symmetric, but random terrain (P3) exposes this gap — PPO freely converges to an asymmetric local optimum where left and right legs use fundamentally different joint angles, yet still scores high reward.</p>
+<p><strong>Fix</strong>: Add a symmetry reward term <code>|qpos_left - qpos_right|</code> or enable Isaac Lab's built-in <code>RslRlSymmetryCfg(use_mirror_loss=True)</code>. Can resume from current P3b Fine checkpoint without retraining from scratch.</p>
+</blockquote>
+<h3 id="sim2sim-gap-p3-fine-on-flat-mujoco">Sim2Sim Gap: P3 Fine on Flat MuJoCo</h3>
+<p align="center">
+  <img src="docs/github_readme/p3_fine_sim2sim_broken.gif" alt="P3 Fine sim2sim broken in MuJoCo" width="45%">
+</p>
+
+<blockquote>
+<p><strong>P3 Fine policy (gentle terrain training) deployed to MuJoCo</strong> — the robot repeatedly falls. Policies trained on rough terrain initially struggle on flat ground in a different simulator due to sim2sim physics gap. This motivated the P3b phase to bridge the gap.</p>
+</blockquote>
+<h2 id="pre-trained-models">Pre-trained Models</h2>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Policy</th>
+<th>Path</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P1 Coarse</td>
+<td>Standing</td>
+<td><code>models/p/p1_coarse/p1_coarse_policy.pt</code></td>
+<td>Bootstraps standing from random init</td>
+</tr>
+<tr>
+<td>P1 Fine</td>
+<td>Standing</td>
+<td><code>models/p/p1_fine/p1_fine_policy.pt</code></td>
+<td>Fine-tuned stable standing on flat terrain</td>
+</tr>
+<tr>
+<td>P2 Coarse</td>
+<td>Locomotion</td>
+<td><code>models/p/p2_coarse/p2_coarse_policy.pt</code></td>
+<td>Initial velocity tracking on flat terrain</td>
+</tr>
+<tr>
+<td>P2 Fine</td>
+<td>Locomotion</td>
+<td><code>models/p/p2_fine/p2_fine_policy.pt</code></td>
+<td>Fine-tuned velocity tracking with gait shaping</td>
+</tr>
+<tr>
+<td>P3 Coarse</td>
+<td>Terrain Walk</td>
+<td><code>models/p/p3_coarse/p3_coarse_policy.pt</code></td>
+<td>Gentle terrain walking (70% flat + 30% grid)</td>
+</tr>
+<tr>
+<td>P3 Fine</td>
+<td>Terrain Walk</td>
+<td><code>models/p/p3_fine/p3_fine_policy.pt</code></td>
+<td>Fine-tuned gentle terrain walking</td>
+</tr>
+<tr>
+<td>P3b Coarse</td>
+<td>Terrain Mix</td>
+<td><code>models/p/p3b_coarse/p3b_coarse_policy.pt</code></td>
+<td>Intermediate terrain (50% flat + 30% grid + 10% stairs + 10% boxes)</td>
+</tr>
+<tr>
+<td>P3b Fine</td>
+<td>Terrain Mix</td>
+<td><code>models/p/p3b_fine/p3b_fine_policy.pt</code></td>
+<td>Fine-tuned intermediate terrain walking</td>
+</tr>
+</tbody>
+</table>
+<h2 id="5-phase-automated-pipeline">5-Phase Automated Pipeline</h2>
+<p>Fully automated training pipeline with overfitting detection, auto-rollback, and phase advancement.</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Terrain</th>
+<th>Key Goal</th>
+<th>Sub-phases</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P1</td>
+<td>Flat</td>
+<td>Bootstrap standing</td>
+<td>coarse → fine</td>
+<td>Done ✅</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>Flat</td>
+<td>Velocity tracking</td>
+<td>coarse → fine</td>
+<td>Done ✅</td>
+</tr>
+<tr>
+<td>P3</td>
+<td>70% flat + 30% gentle grid</td>
+<td>Light terrain walking</td>
+<td>coarse → fine</td>
+<td>Done ✅</td>
+</tr>
+<tr>
+<td>P3b</td>
+<td>50% flat + 30% grid + 10% stairs + 10% boxes</td>
+<td>Intermediate terrain</td>
+<td>coarse → fine</td>
+<td>Done ✅</td>
+</tr>
+<tr>
+<td>P4</td>
+<td>Flat + grid + stairs + gap + boxes</td>
+<td>Rough terrain</td>
+<td>coarse → fine</td>
+<td>In progress 🔄</td>
+</tr>
+<tr>
+<td>P5</td>
+<td>Full terrain + rails</td>
+<td>Complex + high speed</td>
+<td>coarse → fine</td>
+<td>Planned ⏳</td>
+</tr>
+</tbody>
+</table>
+<p>Each sub-phase: config generation → distributed PPO training → overfitting detection → video recording → advance. Orchestrator auto-detects 5 failure signals (reward decline, policy collapse, action explosion, entropy collapse, value divergence) and rolls back if needed.</p>
+<h2 id="directory-structure">Directory Structure</h2>
+<pre><code>Magicbot_Z1/
+├── magiclab_rl_lab/          # RL framework (fork, z1-custom branch)
+├── magicbot-z1_description/  # URDF/Mesh (official)
+├── magicbot-z1_sdk/          # Robot SDK (official)
+├── configs/                  # Custom env configs &amp; scripts
+├── docs/
+│   └── github_readme/        # Demo GIFs, plots &amp; SVG for README
+├── models/
+│   └── p/                    # Pipeline policy checkpoints (Git LFS)
+│       ├── p1_coarse/  p1_fine/
+│       ├── p2_coarse/  p2_fine/
+│       ├── p3_coarse/  p3_fine/
+│       ├── p3b_coarse/ p3b_fine/
+├── videos/                   # Training demo videos (Git LFS)
+├── IsaacLab/                 # Isaac Lab framework (.gitignored)
+└── README.md
+</code></pre>
+<h2 id="submodules">Submodules</h2>
+<table>
+<thead>
+<tr>
+<th>Submodule</th>
+<th>Source</th>
+<th>Branch</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>magiclab_rl_lab</code></td>
+<td><a href="https://github.com/phanghonghao/magiclab_rl_lab">phanghonghao/magiclab_rl_lab</a> (fork)</td>
+<td><code>z1-custom</code></td>
+</tr>
+<tr>
+<td><code>magicbot-z1_description</code></td>
+<td><a href="https://github.com/MagiclabRobotics/magicbot-z1_description">MagiclabRobotics/magicbot-z1_description</a></td>
+<td>main</td>
+</tr>
+<tr>
+<td><code>magicbot-z1_sdk</code></td>
+<td><a href="https://github.com/MagiclabRobotics/magicbot-z1_sdk">MagiclabRobotics/magicbot-z1_sdk</a></td>
+<td>main</td>
+</tr>
+</tbody>
+</table>
+<h2 id="quick-start">Quick Start</h2>
+<h3 id="1-clone-with-submodules">1. Clone with submodules</h3>
+<pre><code class="language-bash">git clone --recurse-submodules https://github.com/phanghonghao/FuRoC-MagicBot-Z1.git
+cd FuRoC-MagicBot-Z1
+</code></pre>
+<h3 id="2-install-isaac-lab">2. Install Isaac Lab</h3>
+<pre><code class="language-bash"># Isaac Lab must be installed separately (excluded from repo)
+# See: https://isaac-sim.github.io/IsaacLab/
+# Symlink into Magicbot_Z1/IsaacLab/
+</code></pre>
+<h3 id="3-train">3. Train</h3>
+<pre><code class="language-bash">cd magiclab_rl_lab
+bash train_bash.sh
+</code></pre>
+<h3 id="4-evaluate-record-video">4. Evaluate / Record Video</h3>
+<pre><code class="language-bash"># Play trained policy
+python scripts/rsl_rl/play_z1_video.py --task=&lt;version&gt;
+
+# Sim2sim (MuJoCo)
+python sim2sim/mujoco_deploy.py --ckpt=&lt;path_to_model&gt;
+
+# Deploy to robot
+python deploy/robot_deploy.py
+</code></pre>
+<h2 id="documentation">Documentation</h2>
+<ul>
+<li><a href="docs/Z1_Locomotion_Training_Plan.md">Training Plan</a></li>
+<li><a href="docs/Z1_Training_Analysis.md">Training Analysis</a></li>
+<li><a href="docs/TODO.md">TODO &amp; Naming Convention</a></li>
+<li><a href="docs/FRAMEWORK.md">Framework Guide</a></li>
+</ul>
+<h2 id="hardware">Hardware</h2>
+<ul>
+<li><strong>GPU</strong>: 4 × RTX 6000D (85 GB VRAM each)</li>
+<li><strong>Training</strong>: <code>torchrun</code> distributed PPO, 16,384 parallel envs (4,096/GPU)</li>
+<li><strong>Throughput</strong>: ~330K steps/s (4 GPUs)</li>
+<li><strong>Framework</strong>: Isaac Lab + rsl_rl</li>
+</ul>
+    <footer>Generated from README.md</footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Training Log — 2026-05-12</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="training-log-2026-05-12">Training Log — 2026-05-12</h1>
+<h2 id="0134-session-summary-p4_coarse-23dof">[01:34] Session Summary — p4_coarse 重启 + 23DOF 投篮任务规划</h2>
+<h3 id="completed">Completed</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>p4_coarse 训练重启</td>
+<td>从 p3_fine model_6900.pt 恢复，min_iterations 5000→2000</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Bug fix: orchestrator crash recovery 重置状态</td>
+<td><strong>Root cause</strong>: orchestrator 发现死 PID → <code>_init_new_run()</code> → 清空 stage_history → 从 p1_coarse 重新开始 · <strong>Fix</strong>: 写入 <code>current_stage_status: "pending"</code> + <code>training_pid: null</code> + 填充 <code>stage_history</code> 6 条绝对路径 → 跳过 crash recovery 直接进 <code>_start_sub_phase()</code> · <strong>Files</strong>: RTX <code>orchestrator_state.json</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Bug fix: orchestrator 重启 3 次均失败</td>
+<td><strong>Root cause</strong>: <code>--fresh</code> 清空状态、死 PID 触发 <code>_init_new_run()</code>、<code>--start-from</code> 不填充 stage_history · <strong>Fix</strong>: 手动构造完整 state JSON，用绝对 checkpoint 路径 · <strong>Files</strong>: RTX <code>orchestrator_state.json</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>确认 p3_fine &gt; p3b_fine</td>
+<td>p3_fine reward 33.33 (May 11) vs p3b_fine reward ~21 (May 9)，p3b 为旧 pipeline 残留</td>
+</tr>
+<tr>
+<td>5</td>
+<td>标记 p3b 为 DEPRECATED</td>
+<td>更新 <code>docs/tracking/bestmodel_phase.json</code>，p3b status 改为 "DEPRECATED — 待移除"</td>
+</tr>
+<tr>
+<td>6</td>
+<td>确认 23DOF 投篮设计文档完整</td>
+<td><code>docs/23dof_throwing/Z1_Throwing_Task_Plan.md</code> 包含完整实施计划（URDF、环境配置、奖励函数、PPO 参数）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="uncompleted-blocked">Uncompleted / Blocked</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Blocker</th>
+<th>Next Step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>23DOF 投篮训练启动</td>
+<td>用户指出：当前策略导致两个关节在非平地扭矩不对称，需先加对称 reward</td>
+<td>确认对称 reward 加在哪个任务（locomotion 还是 throwing），添加后重新训练</td>
+</tr>
+<tr>
+<td>2</td>
+<td>p4_coarse 仍在运行</td>
+<td>bad_ori 58%，用户判断会失败，决定跳过 rough terrain 直接转投篮</td>
+<td>停掉 p4_coarse（orchestrator PID 1473792, training PID 1473864）</td>
+</tr>
+<tr>
+<td>3</td>
+<td>p3_fine → p4_coarse 地形跨度过大</td>
+<td>gentle → rough 直接跳，bad_ori 58% 证实用户预判</td>
+<td>用户决定放弃 rough terrain 训练，转投篮任务</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-decisions">Key Decisions</h3>
+<ul>
+<li>p4_coarse (rough terrain) 放弃：gentle→rough 跨度过大，bad_ori 58%，训练无意义</li>
+<li>p3b 整个 phase 标记为待移除：p3_fine 在 gentle terrain 上 reward 33 优于 p3b 的 ~21</li>
+<li>下一步转向 23DOF 投篮任务，但需先解决关节扭矩不对称问题</li>
+<li>orchestrator 重启的正确方式：手动写 state JSON（status="pending", pid=null, stage_history 填充绝对路径），不能依赖 --start-from 或 --fresh</li>
+</ul>
+<h2 id="1800-session-summary-joint_mirror-reward-p3b_fine_symmetry">[18:00] Session Summary — 添加 joint_mirror 对称 reward + 启动 p3b_fine_symmetry 续训</h2>
+<h3 id="completed_1">Completed</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>config_generator.py 新增 joint_mirror</td>
+<td>在 <code>_REWARD_DEFS</code> 字典添加 <code>joint_mirror</code> 条目，映射到 <code>mdp.joint_mirror</code>，6 对镜像关节 · <strong>Files</strong>: <code>magiclab_rl_lab/scripts/automation/config_generator.py</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>z1_5phase_plan.yaml 新增 p3b_fine_symmetry</td>
+<td>在 p3b phase 的 sub_phases 末尾添加 <code>p3b_fine_symmetry</code> 子阶段：max_iter=5000, LR=1e-4, joint_mirror weight=-0.5, terrain=flat 70% + random_grid 30% (difficulty 0.35) · <strong>Files</strong>: <code>magiclab_rl_lab/training_plans/z1_5phase_plan.yaml</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>Z1_5Stage_Training_Plan.md 新增 §9.5</td>
+<td>记录左右关节不对称问题（hip_pitch 0.37rad, hip_yaw 0.52rad）、原因、方案 · 重编号 §9.5→§9.6, §9.6→§9.7 · <strong>Files</strong>: <code>docs/plans/Z1_5Stage_Training_Plan.md</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>YAML + config_generator 本地验证通过</td>
+<td>YAML syntax OK, <code>joint_mirror</code> in <code>_REWARD_DEFS</code> OK</td>
+</tr>
+<tr>
+<td>5</td>
+<td>修改文件同步到 RTX</td>
+<td><code>scp config_generator.py</code> + <code>scp z1_5phase_plan.yaml</code> 上传到 RTX</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Kill p4_coarse + orchestrator</td>
+<td>停止 PID 1473863 (orchestrator) + 1473864/1473933-1473936 (4 GPU workers)</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Bug fix: orchestrator stage_history 被清空</td>
+<td><strong>Root cause</strong>: orchestrator 检测旧 PID dead → <code>current_stage_status: "running"</code> → mark as "failed" → <code>_init_new_run()</code> 清空 stage_history → checkpoint=None → 从零开始训练 · <strong>Fix</strong>: 手动写 <code>orchestrator_state.json</code>（status="pending", pid=null, stage_history 含 p3_fine model_6900.pt 绝对路径）→ orchestrator 直接进入 main loop → <code>_resolve_checkpoint</code> 正确找到 p3_fine 的 checkpoint</td>
+</tr>
+<tr>
+<td>8</td>
+<td>p3b_fine_symmetry 成功启动</td>
+<td><code>--resume --load_run=2026-05-11_08-33-26_p3_fine --checkpoint=model_6900.pt</code> 正确传入，4 GPU, 4096 envs, PID 1495560 (orchestrator) + 1495567 (training)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="uncompleted-blocked_1">Uncompleted / Blocked</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Blocker</th>
+<th>Next Step</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>验证 joint_mirror reward 在 Isaac Sim 运行时生效</td>
+<td>训练刚启动，Isaac Sim 初始化中（~5-10min）</td>
+<td>等 <code>--tail</code> 出现 <code>Episode_Reward/joint_mirror</code> 确认生效</td>
+</tr>
+<tr>
+<td>2</td>
+<td>p3b_fine_symmetry 训练进行中</td>
+<td>需等 5000 iter 完成</td>
+<td><code>/gpu-train --tail</code> 监控进度</td>
+</tr>
+</tbody>
+</table>
+<h3 id="key-decisions_1">Key Decisions</h3>
+<ul>
+<li>对称 reward 放在 p3b（而非 p3）下：p3b 为过渡 phase，p3_fine 的 model_6900.pt 是当前最优 checkpoint</li>
+<li>joint_mirror weight = -0.5：温和引入不破坏已有步态（L2 squared 平均后单对 ~0.05 级别 × -0.5 ≈ -0.025 偏置）</li>
+<li>LR = 1e-4：比 p3_fine (2e-4) 更低，微调不破坏</li>
+<li>地形与 p3b_fine 一致但简化（flat 70% + random_grid 30% difficulty 0.35），保持同分布只加对称约束</li>
+<li>orchestrator 重启方式与早前 session 一致：手动写 state JSON，status="pending" 避开 PID dead recovery 路径</li>
+</ul>
+    <footer>Generated from training_log_2026-05-12.md</footer>
+  </main>
+</body>
+</html>

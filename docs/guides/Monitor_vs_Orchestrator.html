@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Standalone Monitor vs Phase Orchestrator 对比</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="standalone-monitor-vs-phase-orchestrator">Standalone Monitor vs Phase Orchestrator 对比</h1>
+<blockquote>
+<p>两种训练监控/管理方案的架构、能力与适用场景对比。</p>
+</blockquote>
+<hr>
+<h2 id="1">1. 定位一句话</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Standalone Monitor</th>
+<th>Phase Orchestrator</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>一句话</strong></td>
+<td>被动监控现有训练，检测过拟合</td>
+<td>端到端自动化流水线：配置→训练→监控→回滚→推进→录视频</td>
+</tr>
+<tr>
+<td><strong>类比</strong></td>
+<td>医生巡房（只看不治）</td>
+<td>全自动 ICU（诊断+给药+调方案）</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="2">2. 架构对比</h2>
+<h3 id="standalone-monitor-train_monitorpy">Standalone Monitor (<code>train_monitor.py</code>)</h3>
+<pre><code>train_monitor.py (单文件, ~56KB)
+├── MonitorConfig          — 阈值/路径配置
+├── TensorBoardParser      — 读 TensorBoard event 文件
+├── CheckpointAnalyzer     — 遍历 model_*.pt
+├── RunState               — 单次运行状态容器
+├── OverfittingDetector    — 5 信号过拟合检测
+├── BestModelTracker       — 滚动平均最优模型
+└── ReportGenerator        — 输出格式化 + 命令生成
+</code></pre>
+<h3 id="phase-orchestrator">Phase Orchestrator (多模块系统)</h3>
+<pre><code>scripts/automation/
+├── phase_orchestrator.py  (~49KB) — 主循环：阶段推进、回滚、视频
+├── phase_manager.py               — YAML 解析 + 三层合并
+├── config_generator.py             — 生成 velocity_env_cfg.py
+├── training_launcher.py            — torchrun 启停
+├── embedded_monitor.py             — 包装 train_monitor 的检测逻辑
+├── state_store.py                  — 原子 JSON 状态持久化
+└── ppo_override.py                 — 生成临时 PPO 配置
+
+外部依赖:
+├── train_monitor.py  — OverfittingDetector 等核心类
+└── train_multigpu.py — 多 GPU 训练入口
+</code></pre>
+<hr>
+<h2 id="3">3. 功能对比矩阵</h2>
+<table>
+<thead>
+<tr>
+<th>能力</th>
+<th style="text-align: center;">Standalone Monitor</th>
+<th style="text-align: center;">Phase Orchestrator</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>过拟合检测</strong> (5 信号)</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓ (复用同一 Detector)</td>
+</tr>
+<tr>
+<td><strong>最优模型追踪</strong></td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td><strong>best_models.json</strong> 输出</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✗ (用 orchestrator_state.json)</td>
+</tr>
+<tr>
+<td><strong>训练启动/停止</strong></td>
+<td style="text-align: center;">✗ 被动</td>
+<td style="text-align: center;">✓ torchrun 启停</td>
+</tr>
+<tr>
+<td><strong>配置生成</strong> (env/agent)</td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✓ 三层 YAML 合并</td>
+</tr>
+<tr>
+<td><strong>自动回滚</strong></td>
+<td style="text-align: center;">✗ 仅报警</td>
+<td style="text-align: center;">✓ reward&lt;95%→回退+降 LR</td>
+</tr>
+<tr>
+<td><strong>阶段自动推进</strong></td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✓ coarse→fine→video→next</td>
+</tr>
+<tr>
+<td><strong>视频录制</strong></td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✓ 每阶段完成后自动录</td>
+</tr>
+<tr>
+<td><strong>JIT 导出</strong></td>
+<td style="text-align: center;">✓ <code>--auto_export</code></td>
+<td style="text-align: center;">✓ 集成在 pipeline 中</td>
+</tr>
+<tr>
+<td><strong>崩溃恢复</strong></td>
+<td style="text-align: center;">✗ 无状态</td>
+<td style="text-align: center;">✓ state_store 原子持久化</td>
+</tr>
+<tr>
+<td><strong>单次扫描</strong> (<code>--once</code>)</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✗</td>
+</tr>
+<tr>
+<td><strong>实时监控</strong> (<code>--realtime</code>)</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: center;">✗</td>
+</tr>
+<tr>
+<td><strong>Dry run</strong></td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✓ <code>--dry-run</code></td>
+</tr>
+<tr>
+<td><strong>指定阶段启动</strong> (<code>--start-from</code>)</td>
+<td style="text-align: center;">✗</td>
+<td style="text-align: center;">✓</td>
+</tr>
+<tr>
+<td><strong>地形自适应阈值</strong></td>
+<td style="text-align: center;">✓ flat/gentle/rough</td>
+<td style="text-align: center;">✓ (YAML 可覆盖)</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="4">4. 过拟合检测逻辑（共享）</h2>
+<p>两个系统共用同一套 <code>OverfittingDetector</code>，5 个独立信号任一触发即报警：</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>信号</th>
+<th>阈值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Reward decline</td>
+<td>&gt;20% from peak (median)</td>
+<td>策略退化</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Action rate</td>
+<td>terrain-specific (flat&gt;-0.8, gentle&gt;-1.0, rough&gt;-1.5)</td>
+<td>关节抖动</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Policy std</td>
+<td>&lt; 0.01</td>
+<td>动作确定性过高</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Value loss</td>
+<td>&gt; 100</td>
+<td>价值函数发散</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Entropy collapse</td>
+<td>&gt;95% decline + absolute &lt; 0.5</td>
+<td>策略坍缩</td>
+</tr>
+</tbody>
+</table>
+<p><strong>关键区别</strong>：Monitor 检测后只输出报警；Orchestrator 检测后自动执行停止训练→回滚→重试的完整流程。</p>
+<hr>
+<h2 id="5">5. 状态持久化</h2>
+<h3 id="standalone-monitor">Standalone Monitor — 无持久状态</h3>
+<pre><code>logs/.../monitor/
+├── OVERFITTING_DETECTED    — 标记文件（含详细信号）
+└── best_models.json        — 汇总所有 run 的最优模型
+</code></pre>
+<p>每次启动重新扫描所有 run，不记忆上一次运行结果。</p>
+<h3 id="phase-orchestrator_1">Phase Orchestrator — 原子持久化</h3>
+<pre><code>orchestrator_state.json     — 完整 pipeline 状态
+├── current_phase_id        — 当前子阶段
+├── current_run_dir         — 活跃训练目录
+├── best_model_path         — 当前最优 checkpoint
+├── best_reward             — 最优 reward
+├── rollback_count          — 回滚次数
+├── phase_history[]         — 已完成阶段记录
+└── started_at              — 启动时间
+</code></pre>
+<p>崩溃/手动停止后可通过 <code>--resume</code> 从断点继续，无需重做已完成阶段。</p>
+<hr>
+<h2 id="6">6. 典型使用场景</h2>
+<h3 id="a-standalone-monitor">场景 A：手动调参实验 → 用 Standalone Monitor</h3>
+<pre><code class="language-bash"># 手动启动训练
+ssh rtx &quot;python train.py --task Z1 --run_name my_exp --headless&quot;
+
+# 后台监控，过拟合自动导出 JIT
+/gpu-train --monitor --start
+
+# 随时查看状态
+/gpu-train --monitor --status
+/gpu-train --monitor --realtime    # 实时追踪
+</code></pre>
+<p><strong>适合</strong>：探索性实验、单次训练、需要实时交互、频繁手动干预。</p>
+<h3 id="b-phase-orchestrator">场景 B：全流程自动训练 → 用 Phase Orchestrator</h3>
+<pre><code class="language-bash"># 一键启动 5 阶段 10 子阶段 pipeline
+/gpu-train --automation --start
+
+# 查看整体进度
+/gpu-train --automation --status
+
+# 中断后恢复
+/gpu-train --automation --resume
+</code></pre>
+<p><strong>适合</strong>：成熟方案的批量训练、过夜/过周末无人值守、需要自动回滚和阶段推进。</p>
+<h3 id="c">场景 C：两者并存</h3>
+<pre><code class="language-bash"># Orchestrator 运行 pipeline
+/gpu-train --automation --start
+
+# 同时启动 Standalone Monitor 做 double-check
+/gpu-train --monitor --start
+
+# Monitor 作为独立审计层，不干预 Orchestrator 的训练控制
+</code></pre>
+<p><strong>适合</strong>：对稳定性要求极高的长期训练，双重检测 + 独立报警。</p>
+<hr>
+<h2 id="7-cli">7. CLI 速查</h2>
+<h3 id="standalone-monitor_1">Standalone Monitor</h3>
+<pre><code class="language-bash"># 单次扫描所有 run
+python train_monitor.py --once --terrain gentle
+
+# 实时追踪活跃 run（30s 轮询）
+python train_monitor.py --realtime --terrain gentle
+
+# 后台持续监控 + 过拟合自动导出
+python train_monitor.py --terrain gentle --poll_interval 120 --auto_export
+
+# 分析单个 run
+python train_monitor.py --once --run_dir logs/.../&lt;RUN_DIR&gt;
+
+# Claude 快捷命令
+/gpu-train --monitor              # 单次扫描
+/gpu-train --monitor --start      # 后台启动
+/gpu-train --monitor --status     # 查看状态
+/gpu-train --monitor --stop       # 停止
+/gpu-train --monitor --realtime   # 实时追踪
+/gpu-train --monitor --anal       # 失败分析
+</code></pre>
+<h3 id="phase-orchestrator_2">Phase Orchestrator</h3>
+<pre><code class="language-bash"># 启动完整 pipeline
+python phase_orchestrator.py --plan training_plans/z1_5phase_plan.yaml --num-gpus 4 --fresh
+
+# 从指定阶段开始
+python phase_orchestrator.py --plan ... --start-from p3_coarse
+
+# 恢复中断的 pipeline
+python phase_orchestrator.py --plan ...
+
+# Dry run（验证配置）
+python phase_orchestrator.py --plan ... --dry-run
+
+# Claude 快捷命令
+/gpu-train --automation --start              # 启动
+/gpu-train --automation --status             # 查看进度
+/gpu-train --automation --tail               # pipeline 日志
+/gpu-train --automation --resume             # 恢复
+/gpu-train --automation --stop               # 停止
+/gpu-train --automation --dry-run            # 预览
+</code></pre>
+<hr>
+<h2 id="8">8. 输出文件位置</h2>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>Standalone Monitor</th>
+<th>Orchestrator</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>监控日志</td>
+<td><code>/tmp/z1_monitor.log</code></td>
+<td><code>/tmp/z1_5phase_pipeline.log</code></td>
+</tr>
+<tr>
+<td>训练日志</td>
+<td>N/A (外部管理)</td>
+<td><code>~/magiclab_rl_lab/logs/train_&lt;sub_phase&gt;.log</code></td>
+</tr>
+<tr>
+<td>状态文件</td>
+<td><code>best_models.json</code> (per log root)</td>
+<td><code>orchestrator_state.json</code> (project root)</td>
+</tr>
+<tr>
+<td>过拟合标记</td>
+<td><code>&lt;run_dir&gt;/monitor/OVERFITTING_DETECTED</code></td>
+<td>内嵌在 state JSON</td>
+</tr>
+<tr>
+<td>JIT 导出</td>
+<td><code>&lt;run_dir&gt;/exported/policy.pt</code></td>
+<td>同左</td>
+</tr>
+<tr>
+<td>视频</td>
+<td>N/A</td>
+<td><code>videos/phase_pipeline/&lt;sub_phase&gt;.mp4</code></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="9-orchestrator">9. Orchestrator 的局限</h2>
+<table>
+<thead>
+<tr>
+<th>局限</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>必须预写 YAML</strong></td>
+<td>10 个子阶段的 obs/reward/terrain/LR 全部预设，没写就没法启动</td>
+</tr>
+<tr>
+<td><strong>跑起来改不了</strong></td>
+<td>只能停→改 YAML→重来，不能中途调参</td>
+</tr>
+<tr>
+<td><strong>无实时交互</strong></td>
+<td>没有 <code>--realtime</code> 模式，只能看日志</td>
+</tr>
+<tr>
+<td><strong>探索阶段浪费</strong></td>
+<td>reward 权重、curriculum 阶段数都不确定时，写 YAML 纯属浪费时间</td>
+</tr>
+<tr>
+<td><strong>调试困难</strong></td>
+<td>多模块调用链长，出错要追 phase_manager→config_generator→training_launcher→embedded_monitor</td>
+</tr>
+</tbody>
+</table>
+<h2 id="10">10. 真实工作流</h2>
+<h3 id="standalone-monitor_2">日常迭代循环（Standalone Monitor 主力）</h3>
+<pre><code>改代码 → /gpu-train --start --resume → /gpu-train --monitor --realtime
+   ↑                                          ↓
+   └──── 不行就 kill，改完重来 ←── reward 不涨 / 过拟合
+</code></pre>
+<p>这个快速迭代循环是 Orchestrator 做不到的。</p>
+<h3 id="orchestrator">成熟方案批量训练（Orchestrator 上场）</h3>
+<pre><code>YAML 计划调通 → /gpu-train --automation --start → 过夜/过周末无人值守
+                                                      ↓
+                                              自动完成 10 子阶段
+                                              自动回滚 + 录视频
+                                              崩溃后 --resume 继续
+</code></pre>
+<p><strong>前提</strong>：reward 权重、curriculum 阶段数、terrain 类型都已经用 Standalone Monitor 手动验证过了。</p>
+<h2 id="11">11. 决策一句话</h2>
+<ul>
+<li><strong>还在调参</strong> → Standalone Monitor（<code>--monitor --realtime</code>）</li>
+<li><strong>方案已定，跑量</strong> → Orchestrator（<code>--automation --start</code>）</li>
+</ul>
+<blockquote>
+<p>顺带说明：代码叫 <code>phase_orchestrator.py</code>，Claude 命令用 <code>--automation</code>，两者是同一个东西。
+命名差异是因为 Claude skill 面向用户操作语义（"自动化"），代码面向技术语义（"编排器"）。</p>
+</blockquote>
+<hr>
+<p><em>最后更新: 2026-05-08</em></p>
+    <footer>Generated from Monitor_vs_Orchestrator.md</footer>
+  </main>
+</body>
+</html>

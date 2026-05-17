@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Z1 5-Phase Orchestrator 运维指南</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="z1-5-phase-orchestrator">Z1 5-Phase Orchestrator 运维指南</h1>
+<blockquote>
+<p>Phase-Based Training Orchestrator 的完整技术文档，涵盖架构、流程、状态管理、CLI 用法和故障恢复。</p>
+</blockquote>
+<h2 id="1">1. 架构总览</h2>
+<pre><code class="language-mermaid">graph TB
+    subgraph &quot;phase_orchestrator.py (主循环)&quot;
+        MAIN[PhaseOrchestrator.run]
+    end
+
+    subgraph &quot;核心组件&quot;
+        PM[phase_manager.py&lt;br/&gt;YAML 解析 + 三层合并]
+        CG[config_generator.py&lt;br/&gt;生成 velocity_env_cfg.py]
+        PO[ppo_override.py&lt;br/&gt;生成 PPO 临时配置]
+        TL[training_launcher.py&lt;br/&gt;torchrun 启动/停止]
+        EM[embedded_monitor.py&lt;br/&gt;TensorBoard 轮询 + 过拟合检测]
+        SS[state_store.py&lt;br/&gt;JSON 原子读写]
+    end
+
+    subgraph &quot;外部依赖&quot;
+        TB[train_monitor.py&lt;br/&gt;OverfittingDetector 等]
+        TM[train_multigpu.py&lt;br/&gt;多 GPU 训练入口]
+    end
+
+    MAIN --&gt; PM
+    MAIN --&gt; CG
+    MAIN --&gt; PO
+    MAIN --&gt; TL
+    MAIN --&gt; EM
+    MAIN --&gt; SS
+    EM --&gt; TB
+    TL --&gt;|torchrun| TM
+
+    style MAIN fill:#4a90d9,color:#fff
+    style PM fill:#7b68ee,color:#fff
+    style CG fill:#7b68ee,color:#fff
+    style PO fill:#7b68ee,color:#fff
+    style TL fill:#7b68ee,color:#fff
+    style EM fill:#7b68ee,color:#fff
+    style SS fill:#7b68ee,color:#fff
+    style TB fill:#999,color:#fff
+    style TM fill:#999,color:#fff
+</code></pre>
+<h2 id="2">2. 两层循环：主事件循环</h2>
+<pre><code class="language-mermaid">flowchart TD
+    START([run]) --&gt; RECOVER{crash recovery&lt;br/&gt;state 存在?}
+    RECOVER --&gt;|state == running&lt;br/&gt;PID 存活| RESUME[resume_monitor&lt;br/&gt;重新挂载 monitor]
+    RECOVER --&gt;|state == running&lt;br/&gt;PID 已死| FAIL_MARK[status = failed]
+    RECOVER --&gt;|state None / complete / failed| INIT[_init_new_run&lt;br/&gt;创建新 state]
+
+    RESUME --&gt; LOOP
+    FAIL_MARK --&gt; LOOP
+    INIT --&gt; LOOP
+
+    subgraph LOOP[&quot;主事件循环 (while True)&quot;]
+        STATUS{current_stage_status?}
+
+        STATUS --&gt;|pending| START_SP[_start_sub_phase&lt;br/&gt;生成配置 → 启动训练]
+        STATUS --&gt;|running| MONITOR[_monitor_sub_phase&lt;br/&gt;轮询 monitor + 检查 PID]
+        STATUS --&gt;|overfitting| HANDLE[_handle_overfitting&lt;br/&gt;停止训练 → 回滚判断 → 录视频]
+        STATUS --&gt;|complete| ADVANCE[_advance&lt;br/&gt;推进到下一个 sub-phase]
+        STATUS --&gt;|failed| RETRY[_handle_failure&lt;br/&gt;重试或放弃]
+
+        START_SP --&gt;|status = running| SAVE[save state]
+        MONITOR --&gt;|monitor 触发 overfitting| SAVE
+        HANDLE --&gt;|status = complete| SAVE
+        ADVANCE --&gt;|status = pending| SAVE
+        RETRY --&gt;|retry &lt; max → status = pending| SAVE
+        RETRY --&gt;|retry &gt;= max → exit| EXIT2([sys.exit 1])
+
+        SAVE --&gt; SLEEP[sleep poll_interval]
+        SLEEP --&gt; STATUS
+    end
+
+    SAVE --&gt;|KeyboardInterrupt| SAVE_EXIT[save state + exit]
+    ADVANCE --&gt;|无下一个 sub-phase| ALL_DONE([ALL COMPLETE&lt;br/&gt;sys.exit 0])
+
+    style LOOP fill:#f0f7ff,stroke:#4a90d9
+    style STATUS fill:#ffd700,stroke:#333
+    style ALL_DONE fill:#2ecc71,color:#fff
+    style EXIT2 fill:#e74c3c,color:#fff
+</code></pre>
+<h2 id="3-sub-phase-pending-running">3. Sub-Phase 执行流程 (pending → running)</h2>
+<pre><code class="language-mermaid">flowchart TD
+    PENDING[&quot;_start_sub_phase()&quot;] --&gt; GEN_ENV[&quot;1. config_generator&lt;br/&gt;生成 velocity_env_cfg.py&lt;br/&gt;→ tmp/phase_configs/{sp_id}/&quot;]
+    GEN_ENV --&gt; SWAP[&quot;2. 备份 + 替换&lt;br/&gt;velocity_env_cfg.py&lt;br/&gt;(.bak.{sp_id} 备份)&quot;]
+    SWAP --&gt; GEN_PPO[&quot;3. ppo_override&lt;br/&gt;生成 ppo_override_cfg.py&lt;br/&gt;(LR, entropy 覆盖)&quot;]
+    GEN_PPO --&gt; RESOLVE[&quot;4. _resolve_checkpoint&lt;br/&gt;从 stage_history 找上一个 best&quot;]
+    RESOLVE --&gt; LAUNCH[&quot;5. training_launcher.launch&lt;br/&gt;torchrun --nproc_per_node=N&lt;br/&gt;--agent_cfg=ppo_override_cfg.py&quot;]
+
+    LAUNCH --&gt; WAIT_DIR[&quot;6. 等待 run 目录创建&lt;br/&gt;(最多 8 × 30s = 4min)&quot;]
+    WAIT_DIR --&gt;|找到| SETUP_MON[&quot;7. 初始化 EmbeddedMonitor&lt;br/&gt;设置 terrain / threshold&quot;]
+    WAIT_DIR --&gt;|超时| FAIL[&quot;status = failed&quot;]
+
+    SETUP_MON --&gt; UPDATE_STATE[&quot;8. 更新 state&lt;br/&gt;PID + run_dir + status=running&quot;]
+    UPDATE_STATE --&gt; RUNNING([status: running])
+
+    style PENDING fill:#4a90d9,color:#fff
+    style RUNNING fill:#2ecc71,color:#fff
+    style FAIL fill:#e74c3c,color:#fff
+</code></pre>
+<h2 id="4-running-overfitting">4. 监控循环 (running → overfitting)</h2>
+<pre><code class="language-mermaid">flowchart TD
+    MON[&quot;_monitor_sub_phase()&quot;] --&gt; PID_ALIVE{PID 存活?}
+
+    PID_ALIVE --&gt;|No, returncode=0| EXIT_NORM[&quot;训练正常退出&quot;]
+    PID_ALIVE --&gt;|No, returncode≠0| MAX_ITER{达到 max_iterations?}
+    PID_ALIVE --&gt;|Yes| POLL[&quot;monitor.poll()&quot;]
+
+    MAX_ITER --&gt;|Yes| EXIT_NORM
+    MAX_ITER --&gt;|No| CRASH[&quot;status = failed&quot;]
+
+    EXIT_NORM --&gt; FINAL_POLL[&quot;最终 poll&quot;]
+    FINAL_POLL --&gt; OVERFIT[&quot;status = overfitting&quot;]
+
+    POLL --&gt; SUMMARY{&quot;poll 结果&quot;}
+    SUMMARY --&gt;|&quot;NO_DATA&quot;| WAIT[sleep poll_interval]
+    SUMMARY --&gt;|&quot;HEALTHY&quot;| LOG[&quot;日志: iter, reward, peak, best&quot;]
+    SUMMARY --&gt;|&quot;OVERFITTING&quot;| CALLBACK[&quot;_on_overfitting_callback&lt;br/&gt;status = overfitting&quot;]
+
+    WAIT --&gt; MON
+    LOG --&gt; WAIT2[sleep poll_interval]
+    WAIT2 --&gt; MON
+
+    style OVERFIT fill:#f39c12,color:#fff
+    style CRASH fill:#e74c3c,color:#fff
+    style CALLBACK fill:#f39c12,color:#fff
+</code></pre>
+<h2 id="5-overfitting-complete">5. 过拟合处理 + 回滚 (overfitting → complete)</h2>
+<pre><code class="language-mermaid">flowchart TD
+    HANDLE[&quot;_handle_overfitting()&quot;] --&gt; STOP[&quot;1. 停止训练 PID&quot;]
+    STOP --&gt; FINAL[&quot;2. 最终 monitor.poll()&lt;br/&gt;获取 best checkpoint&quot;]
+
+    FINAL --&gt; ROLLBACK_CHECK{&quot;3. 回滚判断&lt;br/&gt;best_reward &lt; starting × 0.95?&quot;}
+
+    ROLLBACK_CHECK --&gt;|&quot;Yes + retry &lt; max&quot;| REDUCE_LR[&quot;降低 LR × 0.5&lt;br/&gt;重写 ppo_override_cfg.py&quot;]
+    REDUCE_LR --&gt; RETRY[&quot;status = pending&lt;br/&gt;retry_count += 1&quot;]
+
+    ROLLBACK_CHECK --&gt;|&quot;No / retry 耗尽&quot;| RECORD[&quot;4. 记录到 stage_history&quot;]
+    RECORD --&gt; POST[&quot;5. _run_post_phase_pipeline&quot;]
+    POST --&gt; PHASE_CHECK[&quot;6. _check_phase_completion&lt;br/&gt;是否 phase 最后一个 sub-phase?&quot;]
+    PHASE_CHECK --&gt; COMPLETE[&quot;status = complete&quot;]
+
+    subgraph &quot;Post-Phase Pipeline&quot;
+        POST --&gt; JIT[&quot;JIT Export&lt;br/&gt;export_jit.py&quot;]
+        JIT --&gt; MUJOCO[&quot;MuJoCo 录像&lt;br/&gt;mujoco_manual.py&quot;]
+        POST --&gt; ISAAC[&quot;Isaac Sim 录像&lt;br/&gt;play.py --video&quot;]
+        POST --&gt; PLOTS[&quot;生成 plots&lt;br/&gt;plot_learning_curves.py&quot;]
+    end
+
+    style RETRY fill:#f39c12,color:#fff
+    style COMPLETE fill:#2ecc71,color:#fff
+    style POST fill:#e8f4fd,stroke:#4a90d9
+</code></pre>
+<h2 id="6-complete-next-pending">6. 推进逻辑 (complete → next pending)</h2>
+<pre><code class="language-mermaid">flowchart LR
+    ADV[&quot;_advance()&quot;] --&gt; NEXT{&quot;get_next_sub_phase()&quot;}
+
+    NEXT --&gt;|&quot;p1_coarse → p1_fine&quot;| P1F[&quot;p1_fine&lt;br/&gt;(同 phase)&quot;]
+    NEXT --&gt;|&quot;p1_fine → p2_coarse&quot;| P2C[&quot;p2_coarse&lt;br/&gt;(新 phase)&quot;]
+    NEXT --&gt;|&quot;p5_fine → None&quot;| DONE([ALL COMPLETE])
+
+    P1F --&gt; SET[&quot;status = pending&lt;br/&gt;PID = None&lt;br/&gt;rollback = 0&quot;]
+    P2C --&gt; SET
+    SET --&gt; LOOP([回到主循环])
+
+    style DONE fill:#2ecc71,color:#fff
+    style LOOP fill:#4a90d9,color:#fff
+</code></pre>
+<h2 id="7-orchestrator_statejson">7. 状态管理 (orchestrator_state.json)</h2>
+<h3 id="71-state">7.1 State 数据结构</h3>
+<pre><code class="language-mermaid">classDiagram
+    class OrchestratorState {
+        +String plan_name
+        +String current_stage_id        &quot;当前 sub-phase (如 p3_coarse)&quot;
+        +String current_stage_status    &quot;pending | running | overfitting | complete | failed&quot;
+        +int training_pid               &quot;训练进程 PID&quot;
+        +String training_run_dir        &quot;训练 run 目录路径&quot;
+        +String best_checkpoint_path    &quot;当前 best checkpoint 路径&quot;
+        +float best_reward              &quot;当前 best reward&quot;
+        +List stage_history             &quot;已完成 sub-phase 结果列表&quot;
+        +int retry_count                &quot;失败重试计数&quot;
+        +String started_at              &quot;启动时间 ISO&quot;
+        +String updated_at              &quot;最后更新时间 ISO&quot;
+        +String current_phase_id        &quot;当前 phase (如 p3)&quot;
+        +float starting_reward          &quot;sub-phase 开始时 reward (用于回滚判断)&quot;
+        +int rollback_count             &quot;回滚计数&quot;
+        +String error_message           &quot;最后错误信息&quot;
+        +List phase_history             &quot;已完成 phase 结果列表&quot;
+    }
+
+    class StageHistoryEntry {
+        +String sub_phase_id
+        +String phase_id
+        +String status
+        +String best_checkpoint_path
+        +float best_reward
+        +float starting_reward
+        +int rollback_count
+        +String training_run_dir
+        +String completed_at
+    }
+
+    OrchestratorState --&gt; StageHistoryEntry : stage_history
+</code></pre>
+<h3 id="72-state">7.2 State 写入时机</h3>
+<table>
+<thead>
+<tr>
+<th>时机</th>
+<th>写入内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>_init_new_run</code></td>
+<td>plan_name, start_id, status=pending</td>
+</tr>
+<tr>
+<td><code>_start_sub_phase</code></td>
+<td>PID, run_dir, status=running, phase_id</td>
+</tr>
+<tr>
+<td><code>_handle_overfitting</code></td>
+<td>stage_history 追加, best_checkpoint, best_reward</td>
+</tr>
+<tr>
+<td><code>_advance</code></td>
+<td>current_stage_id=next, status=pending</td>
+</tr>
+<tr>
+<td><code>_handle_failure</code></td>
+<td>retry_count++</td>
+</tr>
+<tr>
+<td><code>KeyboardInterrupt</code></td>
+<td>保存当前 state</td>
+</tr>
+<tr>
+<td>主循环每轮结束</td>
+<td>save (原子写入)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="73">7.3 原子写入</h3>
+<p>StateStore 使用 write-to-tmp + os.replace 模式，确保断电不会损坏文件。</p>
+<h2 id="8-cli">8. CLI 参数与模式</h2>
+<h3 id="81">8.1 启动模式决策树</h3>
+<pre><code class="language-mermaid">flowchart TD
+    CLI[&quot;CLI 调用&quot;] --&gt; FRESH{--fresh?}
+    FRESH --&gt;|Yes| CLEAR[&quot;清除 state 文件&lt;br/&gt;start_id = --start-from 或 p1_coarse&quot;]
+    FRESH --&gt;|No| SF{--start-from?}
+    SF --&gt;|Yes| START_FROM[&quot;start_id = --start-from&quot;]
+    SF --&gt;|No| DEFAULT[&quot;start_id = p1_coarse&quot;]
+
+    CLEAR --&gt; RUN[run]
+    START_FROM --&gt; RUN
+    DEFAULT --&gt; RUN
+
+    RUN --&gt; LOAD{加载 state}
+    LOAD --&gt;|state 存在 + running&lt;br/&gt;+ PID 存活| RECOVER[&quot;crash recovery&lt;br/&gt;重新挂载 monitor&quot;]
+    LOAD --&gt;|state 存在 + running&lt;br/&gt;+ PID 已死| DEAD[&quot;status = failed&quot;]
+    LOAD --&gt;|state None / complete / failed| INIT[&quot;_init_new_run&lt;br/&gt;用 start_id 创建新 state&quot;]
+
+    RECOVER --&gt; LOOP([进入主循环])
+    DEAD --&gt; LOOP
+    INIT --&gt; LOOP
+
+    style CLI fill:#4a90d9,color:#fff
+    style RECOVER fill:#f39c12,color:#fff
+    style INIT fill:#2ecc71,color:#fff
+</code></pre>
+<h3 id="82">8.2 模式对比</h3>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>CLI</th>
+<th>行为</th>
+<th>使用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Fresh</strong></td>
+<td><code>--fresh</code></td>
+<td>删除 state，从 p1_coarse 开始</td>
+<td>全新训练、彻底重开</td>
+</tr>
+<tr>
+<td><strong>Fresh + Start From</strong></td>
+<td><code>--fresh --start-from p3_coarse</code></td>
+<td>删除 state，从指定 sub-phase 开始（无前序 checkpoint 信息）</td>
+<td>跳过已完成阶段，但需要手动提供 checkpoint</td>
+</tr>
+<tr>
+<td><strong>Start From</strong></td>
+<td><code>--start-from p3_coarse</code></td>
+<td>保留 state，从指定 sub-phase 开始</td>
+<td>跳到特定阶段</td>
+</tr>
+<tr>
+<td><strong>Resume</strong></td>
+<td>(无特殊参数)</td>
+<td>加载 state，继续当前进度</td>
+<td>orchestrator 崩溃后恢复</td>
+</tr>
+<tr>
+<td><strong>Dry Run</strong></td>
+<td><code>--dry-run</code></td>
+<td>打印所有 10 个 sub-phase 参数，不执行</td>
+<td>参数检查</td>
+</tr>
+<tr>
+<td><strong>Smoke Test</strong></td>
+<td><code>--smoke-test</code></td>
+<td>每个 sub-phase 只跑 50 iter 验证管线</td>
+<td>管线完整性验证</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>注意</strong>: <code>--fresh --start-from</code> 会导致 <code>_resolve_checkpoint()</code> 返回 None（因为 state 被清空、stage_history 为空），训练将从随机初始化开始。必须手动指定 <code>--load_run</code> 和 <code>--checkpoint</code>，或先让前序 phase 完成以积累 stage_history。</p>
+</blockquote>
+<h3 id="83-cli">8.3 完整 CLI 参数</h3>
+<pre><code>--plan           训练计划 YAML 路径 (required)
+--project-root   项目根目录 (default: .)
+--log-root       TensorBoard 日志根目录 (default: logs/rsl_rl/...)
+--start-from     起始 sub-phase ID
+--fresh          忽略已保存状态
+--dry-run        打印配置不执行
+--smoke-test     每个 sub-phase 最小化验证
+--poll-interval  监控轮询间隔秒数 (default: 120)
+--state-file     state 文件名 (default: orchestrator_state.json)
+--num-gpus       GPU 数量 (default: 4)
+</code></pre>
+<h2 id="9-embeddedmonitor">9. EmbeddedMonitor 内部流程</h2>
+<pre><code class="language-mermaid">flowchart TD
+    POLL[&quot;monitor.poll()&quot;] --&gt; READ_TB[&quot;1. 增量读取 TensorBoard&lt;br/&gt;(last_checked_step 之后)&quot;]
+    READ_TB --&gt; READ_CKPT[&quot;2. 扫描新 checkpoint 文件&lt;br/&gt;提取 policy std&quot;]
+    READ_CKPT --&gt; UPDATE[&quot;3. 更新 peak_reward&lt;br/&gt;best_model tracking&quot;]
+    UPDATE --&gt; DETECT[&quot;4. OverfittingDetector.check()&quot;]
+
+    DETECT --&gt; SIGNALS{&quot;5 个独立信号&lt;br/&gt;(任一触发即告警)&quot;}
+    SIGNALS --&gt; S1[&quot;reward decline &gt; 20%&quot;]
+    SIGNALS --&gt; S2[&quot;action_rate &lt; threshold&quot;]
+    SIGNALS --&gt; S3[&quot;policy std &lt; 0.01&quot;]
+    SIGNALS --&gt; S4[&quot;value_loss &gt; 100&quot;]
+    SIGNALS --&gt; S5[&quot;entropy 下降 &gt; 80%&quot;]
+
+    S1 &amp; S2 &amp; S3 &amp; S4 &amp; S5 --&gt; RESULT{&quot;检测结果&quot;}
+    RESULT --&gt;|有信号 + 首次| FIRE[&quot;触发 on_overfitting callback&lt;br/&gt;→ orchestrator status = overfitting&quot;]
+    RESULT --&gt;|无信号| HEALTHY[&quot;返回 HEALTHY&quot;]
+
+    style FIRE fill:#e74c3c,color:#fff
+    style HEALTHY fill:#2ecc71,color:#fff
+</code></pre>
+<h2 id="10">10. 自动回滚机制</h2>
+<pre><code class="language-mermaid">flowchart TD
+    OVERFIT[&quot;overfitting 检测&quot;] --&gt; GET_BEST[&quot;获取 best_reward&quot;]
+    GET_BEST --&gt; CHECK{&quot;best_reward &lt; starting_reward × 0.95?&quot;}
+
+    CHECK --&gt;|Yes| COUNT{&quot;rollback_count &lt; max_retries (1)?&quot;}
+    COUNT --&gt;|Yes| ROLLBACK[&quot;回滚流程:&lt;br/&gt;1. LR × 0.5&lt;br/&gt;2. 重写 ppo_override_cfg.py&lt;br/&gt;3. status = pending&lt;br/&gt;4. rollback_count += 1&quot;]
+    COUNT --&gt;|No| EXHAUSTED[&quot;回滚次数耗尽&lt;br/&gt;记录为 rollback_exhausted&lt;br/&gt;仍推进到下一阶段&quot;]
+
+    CHECK --&gt;|No| NORMAL[&quot;正常推进&quot;]
+
+    ROLLBACK --&gt; RELAUNCH([回到 pending → 重新启动训练])
+    EXHAUSTED --&gt; RECORD[&quot;记录到 stage_history&quot;]
+    NORMAL --&gt; RECORD
+
+    style ROLLBACK fill:#f39c12,color:#fff
+    style NORMAL fill:#2ecc71,color:#fff
+    style EXHAUSTED fill:#e74c3c,color:#fff
+</code></pre>
+<h2 id="11">11. 故障恢复与运维</h2>
+<h3 id="111">11.1 常见故障场景</h3>
+<pre><code class="language-mermaid">flowchart TD
+    subgraph &quot;故障场景&quot;
+        F1[&quot;Orchestrator 进程崩溃&lt;br/&gt;(OOM / 断电 / Ctrl+C)&quot;]
+        F2[&quot;训练进程崩溃&lt;br/&gt;(CUDA error / 超时)&quot;]
+        F3[&quot;Stale TensorBoard 数据&lt;br/&gt;误判过拟合&quot;]
+        F4[&quot;State 文件过期&lt;br/&gt;指向旧 run&quot;]
+        F5[&quot;--fresh --start-from&lt;br/&gt;无 checkpoint 信息&quot;]
+    end
+
+    subgraph &quot;恢复方案&quot;
+        R1[&quot;--resume (无参数)&lt;br/&gt;自动从 state 恢复&quot;]
+        R2[&quot;手动 torchrun 启动&lt;br/&gt;直接指定 --load_run --checkpoint&quot;]
+        R3[&quot;重命名旧 run 目录&lt;br/&gt;添加 _old_vN 后缀&quot;]
+        R4[&quot;手动编辑 state JSON&lt;br/&gt;或删除后用 --start-from&quot;]
+        R5[&quot;直接 torchrun 指定&lt;br/&gt;--load_run + --checkpoint&quot;]
+    end
+
+    F1 --&gt; R1
+    F2 --&gt; R1
+    F3 --&gt; R3
+    F4 --&gt; R4
+    F5 --&gt; R5
+
+    style F3 fill:#e74c3c,color:#fff
+    style F4 fill:#e74c3c,color:#fff
+    style F5 fill:#e74c3c,color:#fff
+</code></pre>
+<h3 id="112">11.2 恢复操作手册</h3>
+<h4 id="a-orchestrator">场景 A: Orchestrator 崩溃，训练仍在运行</h4>
+<pre><code class="language-bash"># 1. 确认训练进程存活
+ssh phh@192.168.120.155 'ps aux | grep train_multigpu | grep phh | grep -v grep'
+
+# 2. 直接 resume orchestrator（会自动挂载到运行中的训练）
+ssh phh@192.168.120.155 &quot;cd ~/magiclab_rl_lab &amp;&amp; nohup python -u scripts/automation/phase_orchestrator.py \
+    --plan training_plans/z1_5phase_plan.yaml --num-gpus 4 --poll-interval 120 \
+    &gt; /tmp/z1_5phase_pipeline.log 2&gt;&amp;1 &amp; echo PID=\$!&quot;
+</code></pre>
+<h4 id="b-orchestrator">场景 B: Orchestrator + 训练都崩溃</h4>
+<pre><code class="language-bash"># 1. 检查 state 文件确认进度
+ssh phh@192.168.120.155 'cat ~/magiclab_rl_lab/orchestrator_state.json'
+
+# 2. 找到最新 checkpoint
+ssh phh@192.168.120.155 'ls -t ~/magiclab_rl_lab/logs/rsl_rl/magiclab_z1_12dof_velocity/*p3_coarse*/model_*.pt | head -1'
+
+# 3. Resume orchestrator（从 state 记录的位置继续）
+ssh phh@192.168.120.155 &quot;cd ~/magiclab_rl_lab &amp;&amp; nohup python -u scripts/automation/phase_orchestrator.py \
+    --plan training_plans/z1_5phase_plan.yaml --num-gpus 4 --poll-interval 120 \
+    &gt; /tmp/z1_5phase_pipeline.log 2&gt;&amp;1 &amp; echo PID=\$!&quot;
+</code></pre>
+<h4 id="c-stale-tensorboard">场景 C: Stale TensorBoard 数据导致误判</h4>
+<pre><code class="language-bash"># 1. 重命名旧的 run 目录（加 _old_vN 后缀）
+ssh phh@192.168.120.155 'cd ~/magiclab_rl_lab/logs/rsl_rl/magiclab_z1_12dof_velocity &amp;&amp; \
+    for d in *p3_coarse* *p3_fine* *p4* *p5*; do
+        [ -d &quot;$d&quot; ] &amp;&amp; [ ! &quot;${d##*_old_v*}&quot; ] || mv &quot;$d&quot; &quot;${d}_old_v1&quot;
+    done'
+
+# 2. 重新启动 orchestrator
+</code></pre>
+<h4 id="d-orchestrator-torchrun">场景 D: 绕过 Orchestrator，直接 torchrun</h4>
+<p>当 orchestrator state 管理出问题，或需要使用自定义参数时：</p>
+<pre><code class="language-bash">ssh phh@192.168.120.155 &quot;cd ~/magiclab_rl_lab &amp;&amp; source ~/miniconda3/etc/profile.d/conda.sh &amp;&amp; conda activate isaaclab &amp;&amp; \
+    nohup torchrun --nproc_per_node=4 --master_port=29502 \
+    scripts/rsl_rl/train_multigpu.py \
+    --task=Magiclab-Z1-12dof-Velocity \
+    --run_name=p3_coarse_v2 \
+    --headless --distributed \
+    --num_envs=4096 --max_iterations=15000 \
+    --resume \
+    --load_run=2026-05-07_03-10-20_p2_fine \
+    --checkpoint=model_3000.pt \
+    --agent_cfg=/home/phh/magiclab_rl_lab/tmp/phase_configs/p3_coarse/ppo_override_cfg.py \
+    &gt; /tmp/z1_p3_coarse_v2.log 2&gt;&amp;1 &amp; echo PID=\$!&quot;
+</code></pre>
+<blockquote>
+<p><strong>注意</strong>: 直接 torchrun 启动时<strong>没有 embedded monitor</strong>，需要手动使用 <code>--monitor</code> 监控或等训练完成后手动启动 orchestrator。</p>
+</blockquote>
+<h4 id="e-state-resume">场景 E: 手动修复 State 后 Resume</h4>
+<pre><code class="language-bash"># 1. 备份当前 state
+ssh phh@192.168.120.155 'cp ~/magiclab_rl_lab/orchestrator_state.json ~/magiclab_rl_lab/orchestrator_state.json.bak'
+
+# 2. 编辑 state：更新 current_stage_id, best_checkpoint_path, best_reward 等
+# 3. 启动 orchestrator（不带 --fresh，让它读修改后的 state）
+</code></pre>
+<h3 id="113-p3_coarse_v2-orchestrator">11.3 p3_coarse_v2 完成后接入 Orchestrator</h3>
+<p>当前 p3_coarse_v2 是直接 torchrun 启动的，完成后需要手动更新 state 再启动 orchestrator 处理后续阶段：</p>
+<pre><code class="language-bash"># 1. 从 TensorBoard 找到 v2 的 best checkpoint
+# 2. 手动更新 orchestrator_state.json：
+#    - current_stage_id = &quot;p3_fine&quot;
+#    - current_stage_status = &quot;pending&quot;
+#    - best_checkpoint_path = &quot;&lt;v2 run dir&gt;/model_&lt;best&gt;.pt&quot;
+#    - best_reward = &lt;v2 best reward&gt;
+#    - starting_reward = &lt;v2 best reward&gt;
+#    - stage_history 追加 p3_coarse v2 的结果
+# 3. 启动 orchestrator（不带 --fresh）：
+ssh phh@192.168.120.155 &quot;cd ~/magiclab_rl_lab &amp;&amp; nohup python -u scripts/automation/phase_orchestrator.py \
+    --plan training_plans/z1_5phase_plan.yaml --num-gpus 4 --poll-interval 120 \
+    &gt; /tmp/z1_5phase_pipeline.log 2&gt;&amp;1 &amp; echo PID=\$!&quot;
+</code></pre>
+<h2 id="12">12. 文件路径速查</h2>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>路径 (相对于 ~/magiclab_rl_lab/)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Orchestrator 主脚本</td>
+<td><code>scripts/automation/phase_orchestrator.py</code></td>
+</tr>
+<tr>
+<td>Phase Manager</td>
+<td><code>scripts/automation/phase_manager.py</code></td>
+</tr>
+<tr>
+<td>Config Generator</td>
+<td><code>scripts/automation/config_generator.py</code></td>
+</tr>
+<tr>
+<td>PPO Override</td>
+<td><code>scripts/automation/ppo_override.py</code></td>
+</tr>
+<tr>
+<td>State Store</td>
+<td><code>scripts/automation/state_store.py</code></td>
+</tr>
+<tr>
+<td>Training Launcher</td>
+<td><code>scripts/automation/training_launcher.py</code></td>
+</tr>
+<tr>
+<td>Embedded Monitor</td>
+<td><code>scripts/automation/embedded_monitor.py</code></td>
+</tr>
+<tr>
+<td>Train Monitor</td>
+<td><code>scripts/train_monitor.py</code></td>
+</tr>
+<tr>
+<td>State 文件</td>
+<td><code>orchestrator_state.json</code></td>
+</tr>
+<tr>
+<td>Pipeline 日志</td>
+<td><code>/tmp/z1_5phase_pipeline.log</code></td>
+</tr>
+<tr>
+<td>Orchestrator 持久日志</td>
+<td><code>logs/phase_orchestrator.log</code></td>
+</tr>
+<tr>
+<td>生成的 env 配置</td>
+<td><code>tmp/phase_configs/{sp_id}/velocity_env_cfg.py</code></td>
+</tr>
+<tr>
+<td>生成的 PPO 配置</td>
+<td><code>tmp/phase_configs/{sp_id}/ppo_override_cfg.py</code></td>
+</tr>
+<tr>
+<td>训练 run 目录</td>
+<td><code>logs/rsl_rl/magiclab_z1_12dof_velocity/&lt;run_dir&gt;/</code></td>
+</tr>
+<tr>
+<td>视频</td>
+<td><code>videos/phase_pipeline/{sp_id}.mp4</code></td>
+</tr>
+<tr>
+<td>Plots</td>
+<td><code>plots/{sp_id}/</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="13">13. 完整生命周期</h2>
+<pre><code class="language-mermaid">flowchart LR
+    subgraph &quot;Phase 1&quot;
+        P1C[p1_coarse] --&gt; P1F[p1_fine]
+    end
+    subgraph &quot;Phase 2&quot;
+        P2C[p2_coarse] --&gt; P2F[p2_fine]
+    end
+    subgraph &quot;Phase 3&quot;
+        P3C[p3_coarse] --&gt; P3F[p3_fine]
+    end
+    subgraph &quot;Phase 4&quot;
+        P4C[p4_coarse] --&gt; P4F[p4_fine]
+    end
+    subgraph &quot;Phase 5&quot;
+        P5C[p5_coarse] --&gt; P5F[p5_fine]
+    end
+
+    P1F --&gt; P2C
+    P2F --&gt; P3C
+    P3F --&gt; P4C
+    P4F --&gt; P5C
+    P5F --&gt; DEPLOY([最终部署模型])
+
+    style P1C fill:#3498db,color:#fff
+    style P1F fill:#2980b9,color:#fff
+    style P2C fill:#2ecc71,color:#fff
+    style P2F fill:#27ae60,color:#fff
+    style P3C fill:#f39c12,color:#fff
+    style P3F fill:#e67e22,color:#fff
+    style P4C fill:#e74c3c,color:#fff
+    style P4F fill:#c0392b,color:#fff
+    style P5C fill:#9b59b6,color:#fff
+    style P5F fill:#8e44ad,color:#fff
+    style DEPLOY fill:#2ecc71,color:#fff
+</code></pre>
+<p>每个 sub-phase 内部的完整流程:</p>
+<pre><code>config_gen → swap_env → ppo_gen → resolve_ckpt → torchrun → monitor_poll
+→ overfitting → stop → rollback_check → record_video → advance
+</code></pre>
+<p>共 10 个 sub-phase，~210K iterations，预计总训练时间 28-35 小时 (4 GPU)。</p>
+    <footer>Generated from Z1_Orchestrator_Guide.md</footer>
+  </main>
+</body>
+</html>

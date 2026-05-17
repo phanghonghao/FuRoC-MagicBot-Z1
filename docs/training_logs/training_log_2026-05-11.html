@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Training Log — 2026-05-11</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="training-log-2026-05-11">Training Log — 2026-05-11</h1>
+<h2 id="0300-session-summary-z1-rl">[03:00] Session Summary — Z1 投篮 RL 任务框架搭建 + 验证</h2>
+<h3 id="completed">Completed</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>创建 <code>docs/23dof_throwing/Z1_Throwing_Task_Plan.md</code></td>
+<td>完整实施计划文档，含设计概览、文件结构、奖励函数设计、手部替换指南</td>
+</tr>
+<tr>
+<td>2</td>
+<td>URDF 手掌 collision</td>
+<td><code>MagicBotZ1_23dof.urdf</code> 的 <code>left_hand_palm_link</code> 和 <code>right_hand_palm_link</code> 各加了 sphere collision (radius=0.04)，带 TODO 标记</td>
+</tr>
+<tr>
+<td>3</td>
+<td>23DOF 机器人配置 <code>MAGICLAB_Z1_23DOF_CFG</code></td>
+<td><code>assets/robots/magiclab.py</code> 新增 23DOF 配置：6 组 actuator（legs/feet/shoulders/elbows/wrists/waist）、手臂初始姿态、23 个 SDK 关节名</td>
+</tr>
+<tr>
+<td>4</td>
+<td>投篮任务框架 <code>tasks/throwing/</code></td>
+<td>11 个 Python 文件：env config（含 <code>HAND_CONFIG</code> 参数化）、PPO config、7 个奖励函数、6 个观测函数、gym.register</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Bug fix: <code>omni.log</code> 导入失败</td>
+<td><strong>Root cause</strong>: <code>throwing/robots/__init__.py</code> 加了 <code>from isaaclab_tasks.utils import import_packages</code>，触发 isaaclab 导入链需要 <code>omni.log</code>（仅 Omniverse 运行时可用） · <strong>Fix</strong>: 改为空文件（与 locomotion/robots 一致），让 <code>list_envs.py</code> 的 <code>_walk_packages</code> 递归发现 <code>z1/__init__.py</code> 中的 <code>gym.register</code> · <strong>Files</strong>: <code>tasks/throwing/robots/__init__.py</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td>Bug fix: <code>list_envs.py</code> 缺少 throwing</td>
+<td><strong>Root cause</strong>: <code>list_envs.py</code> 只遍历 <code>locomotion.robots</code>，不包含 <code>throwing.robots</code> · <strong>Fix</strong>: 添加 <code>"throwing.robots"</code> 到遍历列表 · <strong>Files</strong>: <code>scripts/list_envs.py</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>RTX 服务器验证通过</td>
+<td><code>isaaclab.sh -p train.py --task Magiclab-Z1-23dof-Throwing --num_envs 64 --headless --max_iterations 3</code> 成功运行 3 次迭代，~1000 steps/s，所有奖励/观测函数正常</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_1">未完成/待调参</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Item</th>
+<th>Blocker</th>
+<th>下一步</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>机器人立刻摔倒</td>
+<td><code>bad_orientation: 99.2%</code> — 初始姿态不适合投篮任务，<code>limit_angle=1.0</code> 可能过严</td>
+<td>调整初始关节角度、放宽 termination 阈值、考虑锁定腿部关节</td>
+</tr>
+<tr>
+<td>2</td>
+<td>球从未在手掌上</td>
+<td><code>ball_on_palm: 0.0</code> — 球初始位置可能偏离手掌，需要精确设置 reset 时的球位置</td>
+<td>在 EventCfg 中添加 ball reset 事件，将球预置到 <code>left_hand_palm_link</code> 上方</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>quat_rotate_inverse</code> 弃用警告</td>
+<td>大量 warning（不影响功能）</td>
+<td><code>observations.py</code> 中已有 <code>try/except</code> 兼容，可后续统一改为 <code>quat_apply_inverse</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>正式训练未开始</td>
+<td>环境框架已就绪，但初始状态需要调参才能有效训练</td>
+<td>按上述 1-2 修复后启动正式训练</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_2">关键设计决策</h3>
+<ul>
+<li>手部参数化：<code>HAND_CONFIG</code> 字典控制 <code>hand_type</code>/<code>ee_link</code>/<code>hand_joint_names</code>，换 URDF 只改配置</li>
+<li>动作空间：手臂 10DOF + 腰 1DOF = 11 DOF（<code>fixed_palm</code> 模式），<code>dexterous</code> 模式自动扩展</li>
+<li>投篮任务与 12DOF 行走任务完全独立，互不影响</li>
+<li>文档独立文件夹 <code>docs/23dof_throwing/</code>，与 12DOF 行走文档分离</li>
+</ul>
+<h3 id="_3">新增/修改文件清单</h3>
+<pre><code># 新增
+docs/23dof_throwing/Z1_Throwing_Task_Plan.md
+tasks/throwing/__init__.py
+tasks/throwing/agents/__init__.py
+tasks/throwing/agents/rsl_rl_ppo_cfg.py
+tasks/throwing/mdp/__init__.py
+tasks/throwing/mdp/rewards.py
+tasks/throwing/mdp/observations.py
+tasks/throwing/mdp/commands.py
+tasks/throwing/mdp/curriculums.py
+tasks/throwing/robots/__init__.py        (空文件)
+tasks/throwing/robots/z1/__init__.py      (gym.register)
+tasks/throwing/robots/z1/shoot_env_cfg.py
+
+# 修改
+assets/robots/magiclab.py                 (+MAGICLAB_Z1_23DOF_CFG)
+data/robots/magicbot-Z1/urdf/MagicBotZ1_23dof.urdf  (手掌 collision)
+scripts/list_envs.py                      (+throwing.robots)
+
+# 删除
+docs/Z1_Throwing_Task_Plan.md             (迁入 23dof_throwing/)
+</code></pre>
+    <footer>Generated from training_log_2026-05-11.md</footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Z1 Humanoid Policy Viewer 集成指南</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="z1-humanoid-policy-viewer">Z1 Humanoid Policy Viewer 集成指南</h1>
+<p>将 Z1 12-DOF 人形机器人的 velocity tracking policy 集成到 <a href="https://github.com/Axellwppr/humanoid-policy-viewer">humanoid-policy-viewer</a>（基于 MuJoCo WASM + ONNX Runtime Web 的浏览器端策略可视化平台）。</p>
+<hr>
+<h2 id="_1">目录</h2>
+<ul>
+<li><a href="#架构概览">架构概览</a></li>
+<li><a href="#文件结构">文件结构</a></li>
+<li><a href="#policy-转换流程">Policy 转换流程</a></li>
+<li><a href="#观测空间定义">观测空间定义</a></li>
+<li><a href="#mjcf-场景配置">MJCF 场景配置</a></li>
+<li><a href="#pd-控制参数">PD 控制参数</a></li>
+<li><a href="#前端集成细节">前端集成细节</a></li>
+<li><a href="#sim-to-sim-注意事项">Sim-to-Sim 注意事项</a></li>
+<li><a href="#常见问题排查">常见问题排查</a></li>
+</ul>
+<hr>
+<h2 id="_2">架构概览</h2>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│                   Browser (WASM)                     │
+│                                                      │
+│  ┌──────────┐   ┌──────────────┐   ┌─────────────┐ │
+│  │ MuJoCo   │──▶│ Observation  │──▶│  ONNX       │ │
+│  │ WASM     │   │ Pipeline     │   │  Runtime    │ │
+│  │ (z1.xml) │   │ (47dim×5=235)│   │  (.onnx)    │ │
+│  └──────────┘   └──────────────┘   └──────┬──────┘ │
+│       ▲                                    │        │
+│       │          action (12dim)            │        │
+│       │         × action_scale(0.25)       │        │
+│       │         + default_joint_pos        │        │
+│       │         → PD torque → ctrl         │        │
+│       └────────────────────────────────────┘        │
+│                                                      │
+│  UI: Velocity Command Sliders (vx, vy, vyaw)        │
+└─────────────────────────────────────────────────────┘
+</code></pre>
+<hr>
+<h2 id="_3">文件结构</h2>
+<pre><code>humanoid-policy-viewer/
+├── public/examples/
+│   ├── scenes/
+│   │   ├── files.json                    # 场景文件索引（已添加 Z1 条目）
+│   │   └── z1/
+│   │       ├── z1.xml                    # Z1 MJCF 场景文件
+│   │       └── meshes/                   # 25个 STL 网格文件
+│   │           ├── pelvis.STL
+│   │           ├── LINK_HIP_PITCH_L.STL
+│   │           └── ...
+│   └── checkpoints/
+│       └── z1/
+│           ├── p2_fine_policy.onnx       # ONNX 推理模型
+│           └── velocity_policy.json      # 策略配置文件
+├── scripts/
+│   └── export_z1_onnx.py                # TorchScript → ONNX 转换脚本
+└── src/
+    ├── simulation/
+    │   ├── main.js                       # 主仿真循环 + PD 控制
+    │   ├── mujocoUtils.js                # MuJoCo 工具函数
+    │   └── observationHelpers.js         # 观测计算类
+    └── views/
+        └── Demo.vue                      # 前端 UI 组件
+</code></pre>
+<hr>
+<h2 id="policy">Policy 转换流程</h2>
+<h3 id="1-torchscript-onnx">1. TorchScript → ONNX</h3>
+<p>使用 <code>scripts/export_z1_onnx.py</code>：</p>
+<pre><code class="language-bash">cd humanoid-policy-viewer
+python scripts/export_z1_onnx.py
+</code></pre>
+<p>关键参数：
+- <strong>obs_dim = 235</strong>（47 per frame × 5 history frames）
+- 使用 <code>dynamo=False</code>（legacy TorchScript exporter），因为 PyTorch 2.9+ 的新 ONNX exporter 不兼容 TorchScript</p>
+<pre><code class="language-python">torch.onnx.export(
+    model,
+    torch.randn(1, 235),
+    output_path,
+    input_names=[&quot;policy&quot;],
+    output_names=[&quot;action&quot;],
+    dynamo=False  # 必须用 legacy exporter
+)
+</code></pre>
+<h3 id="2">2. 策略配置文件</h3>
+<p><code>velocity_policy.json</code> 定义了模型路径、观测配置、PD 参数等：</p>
+<pre><code class="language-json">{
+  &quot;onnx&quot;: {
+    &quot;path&quot;: &quot;./examples/checkpoints/z1/p2_fine_policy.onnx&quot;,
+    &quot;meta&quot;: {
+      &quot;in_keys&quot;: [&quot;policy&quot;],
+      &quot;out_keys&quot;: [&quot;action&quot;],
+      &quot;in_shapes&quot;: [[[1, 235]]]
+    }
+  },
+  &quot;obs_config&quot;: {
+    &quot;policy&quot;: [
+      {
+        &quot;name&quot;: &quot;VelocityPolicyObs&quot;,
+        &quot;history_length&quot;: 5,
+        &quot;period&quot;: 0.6
+      }
+    ]
+  },
+  &quot;policy_joint_names&quot;: [ ... ],
+  &quot;action_scale&quot;: [0.25, ...],
+  &quot;stiffness&quot;: [100,100,100,150,60,60, 100,100,100,150,60,60],
+  &quot;damping&quot;: [4,4,4,5,3,3, 4,4,4,5,3,3],
+  &quot;default_joint_pos&quot;: [-0.35,0,0,0.7,-0.35,0, -0.35,0,0,0.7,-0.35,0]
+}
+</code></pre>
+<hr>
+<h2 id="_4">观测空间定义</h2>
+<h3 id="47">单帧观测 (47 维)</h3>
+<table>
+<thead>
+<tr>
+<th>索引</th>
+<th>维度</th>
+<th>名称</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0-2</td>
+<td>3</td>
+<td>base_ang_vel</td>
+<td>基座角速度（<strong>体坐标系</strong>）</td>
+</tr>
+<tr>
+<td>3-5</td>
+<td>3</td>
+<td>projected_gravity</td>
+<td>重力投影向量</td>
+</tr>
+<tr>
+<td>6-8</td>
+<td>3</td>
+<td>velocity_commands</td>
+<td>速度指令 (vx, vy, vyaw)</td>
+</tr>
+<tr>
+<td>9-20</td>
+<td>12</td>
+<td>joint_pos_rel</td>
+<td>关节位置 - 默认位置</td>
+</tr>
+<tr>
+<td>21-32</td>
+<td>12</td>
+<td>joint_vel</td>
+<td>关节角速度</td>
+</tr>
+<tr>
+<td>33-44</td>
+<td>12</td>
+<td>last_action</td>
+<td>上一步动作</td>
+</tr>
+<tr>
+<td>45-46</td>
+<td>2</td>
+<td>gait_phase</td>
+<td>步态相位 (sin, cos)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="5-47-235">历史堆叠 (5帧 × 47 = 235 维)</h3>
+<p>RSL-RL 使用 <code>history_length=5</code>，将最近 5 帧观测拼接：</p>
+<pre><code>[obs(t-4), obs(t-3), obs(t-2), obs(t-1), obs(t)] → 235 维
+</code></pre>
+<p>实现：<code>VelocityPolicyObs</code> 类（<code>observationHelpers.js</code>）</p>
+<h3 id="_5">关键坐标系转换</h3>
+<p>MuJoCo free joint 的 <code>qvel[3:6]</code> 是<strong>世界坐标系</strong>角速度，而 Isaac Lab 的 <code>base_ang_vel</code> 是<strong>体坐标系</strong>。需要在 <code>main.js</code> 中做转换：</p>
+<pre><code class="language-javascript">// 四元数逆旋转: q^-1 * v_world = v_body
+const qix = -qx, qiy = -qy, qiz = -qz, qiw = qw;
+// v + 2*qw*(qi × v) + 2*(qi × (qi × v))
+</code></pre>
+<hr>
+<h2 id="mjcf">MJCF 场景配置</h2>
+<h3 id="_6">关键修改点</h3>
+<p>原始 MJCF 来自 <code>magicbot-z1_description/mjcf/MAGICBOTZ1.xml</code>，以下为 viewer 适配的修改：</p>
+<ol>
+<li><strong>meshdir 路径</strong>：<code>meshdir="../meshes/"</code> → <code>meshdir="meshes/"</code></li>
+<li><strong>关节阻尼</strong>：<code>damping="10"</code> → <code>damping="2.0"</code>（配合显式 PD 控制）</li>
+<li><strong>执行器力矩限制</strong>：</li>
+</ol>
+<pre><code class="language-xml">&lt;motor name=&quot;left_hip_pitch_actuator&quot; joint=&quot;JOINT_HIP_PITCH_L&quot;
+       ctrllimited=&quot;true&quot; ctrlrange=&quot;-200 200&quot;/&gt;
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>关节</th>
+<th>ctrlrange (Nm)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hip_pitch / hip_roll</td>
+<td>±200</td>
+</tr>
+<tr>
+<td>hip_yaw</td>
+<td>±150</td>
+</tr>
+<tr>
+<td>knee</td>
+<td>±200</td>
+</tr>
+<tr>
+<td>ankle_pitch / ankle_roll</td>
+<td>±100</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>必须</strong> 设置 <code>ctrllimited="true"</code> 和 <code>ctrlrange</code>，否则显式 PD 控制器会产生无界力矩，导致 MuJoCo NaN 爆炸。</p>
+</blockquote>
+<h3 id="_7">脚部几何</h3>
+<p>原始 MJCF 的脚部 mesh 被注释掉，替换为 box 碰撞体以提升稳定性：</p>
+<pre><code class="language-xml">&lt;geom name=&quot;l_foot&quot; type=&quot;box&quot; size=&quot;0.09 0.04 0.005&quot; pos=&quot;0.03 0.0 -0.01&quot; group=&quot;2&quot;/&gt;
+</code></pre>
+<hr>
+<h2 id="pd">PD 控制参数</h2>
+<p>Viewer 使用<strong>显式 PD 控制</strong>，而非 Isaac Lab 的隐式 PD：</p>
+<pre><code>torque = kp × (target_pos - current_pos) + kd × (0 - current_vel)
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>关节</th>
+<th>kp (stiffness)</th>
+<th>kd (damping)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hip_pitch</td>
+<td>100</td>
+<td>4</td>
+</tr>
+<tr>
+<td>hip_roll</td>
+<td>100</td>
+<td>4</td>
+</tr>
+<tr>
+<td>hip_yaw</td>
+<td>100</td>
+<td>4</td>
+</tr>
+<tr>
+<td>knee</td>
+<td>150</td>
+<td>5</td>
+</tr>
+<tr>
+<td>ankle_pitch</td>
+<td>60</td>
+<td>3</td>
+</tr>
+<tr>
+<td>ankle_roll</td>
+<td>60</td>
+<td>3</td>
+</tr>
+</tbody>
+</table>
+<p>目标位置计算：</p>
+<pre><code class="language-javascript">target_pos = default_joint_pos + action × action_scale(0.25)
+</code></pre>
+<hr>
+<h2 id="_8">前端集成细节</h2>
+<h3 id="ui-demovue">速度指令 UI (Demo.vue)</h3>
+<p>三个滑块控制速度指令：
+- <strong>Forward (vx)</strong>: -1.0 ~ 2.0 m/s
+- <strong>Lateral (vy)</strong>: -1.0 ~ 1.0 m/s
+- <strong>Yaw (vyaw)</strong>: -3.0 ~ 3.0 rad/s</p>
+<h3 id="_9">初始关节位置</h3>
+<p>仿真重置时设置默认站立姿态，防止零位（直腿）导致的初始不稳定：</p>
+<pre><code class="language-javascript">// default_joint_pos: [-0.35, 0, 0, 0.7, -0.35, 0, -0.35, 0, 0, 0.7, -0.35, 0]
+// 对应: hip_pitch=-0.35, knee=0.7, ankle_pitch=-0.35 (微蹲姿态)
+</code></pre>
+<h3 id="_10">关节名称映射</h3>
+<table>
+<thead>
+<tr>
+<th>Isaac Lab (URDF)</th>
+<th>MuJoCo (MJCF)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>left_hip_pitch_joint</td>
+<td>JOINT_HIP_PITCH_L</td>
+</tr>
+<tr>
+<td>left_hip_roll_joint</td>
+<td>JOINT_HIP_ROLL_L</td>
+</tr>
+<tr>
+<td>left_hip_yaw_joint</td>
+<td>JOINT_HIP_YAW_L</td>
+</tr>
+<tr>
+<td>left_knee_joint</td>
+<td>JOINT_KNEE_PITCH_L</td>
+</tr>
+<tr>
+<td>left_ankle_pitch_joint</td>
+<td>JOINT_ANKLE_PITCH_L</td>
+</tr>
+<tr>
+<td>left_ankle_roll_joint</td>
+<td>JOINT_ANKLE_ROLL_L</td>
+</tr>
+<tr>
+<td>right_* (同理)</td>
+<td>*_R</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="sim-to-sim">Sim-to-Sim 注意事项</h2>
+<h3 id="isaac-lab-vs-mujoco">Isaac Lab vs MuJoCo 差异</h3>
+<table>
+<thead>
+<tr>
+<th>特性</th>
+<th>Isaac Lab (PhysX)</th>
+<th>MuJoCo WASM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PD 控制</td>
+<td>隐式（PhysX 内置）</td>
+<td>显式（JS 计算 torque）</td>
+</tr>
+<tr>
+<td>角速度帧</td>
+<td>体坐标系</td>
+<td>世界坐标系（需转换）</td>
+</tr>
+<tr>
+<td>时间步长</td>
+<td>~50Hz (DT=0.02)</td>
+<td>0.002s (500Hz)</td>
+</tr>
+<tr>
+<td>关节阻尼</td>
+<td>PD 控制器隐含</td>
+<td>需要显式设置</td>
+</tr>
+<tr>
+<td>力矩限制</td>
+<td>URDF effort</td>
+<td>MJCF ctrlrange</td>
+</tr>
+</tbody>
+</table>
+<h3 id="sim-to-sim-gap">已知的 Sim-to-Sim Gap</h3>
+<ol>
+<li><strong>接触模型差异</strong>：PhysX 和 MuJoCo 的接触力学不同，可能影响脚部抓地力</li>
+<li><strong>阻尼行为</strong>：显式 PD 的阻尼效果与隐式 PD 不完全等价</li>
+<li><strong>数值精度</strong>：WASM 单精度浮点 vs GPU 训练时的混合精度</li>
+</ol>
+<hr>
+<h2 id="_11">常见问题排查</h2>
+<h3 id="q-nan-qacc-warning">Q: NaN 爆炸（QACC warning）</h3>
+<pre><code>WARNING: Nan, Inf or huge value in QACC at DOF X
+</code></pre>
+<p><strong>原因</strong>：执行器无 <code>ctrlrange</code>，PD 力矩无限大
+<strong>解决</strong>：在 MJCF 的 <code>&lt;motor&gt;</code> 上添加 <code>ctrllimited="true" ctrlrange="-200 200"</code></p>
+<h3 id="q">Q: 机器人立刻摔倒</h3>
+<p>检查以下几点：
+1. 初始关节位置是否正确设置（<code>default_joint_pos</code>）
+2. 角速度是否做了世界→体坐标系转换
+3. 关节阻尼是否合理（推荐 1.0 ~ 3.0）
+4. ONNX 输入维度是否为 235（47×5）</p>
+<h3 id="q-onnx-dynamo">Q: ONNX 导出失败 <code>dynamo</code> 相关错误</h3>
+<p>PyTorch 2.9+ 新 ONNX exporter 不支持 TorchScript，需要 <code>dynamo=False</code>：</p>
+<pre><code class="language-python">torch.onnx.export(model, ..., dynamo=False)
+</code></pre>
+<h3 id="q-shape-mismatch-1x47-vs-235x512">Q: 模型 shape mismatch (1x47 vs 235x512)</h3>
+<p><code>history_length=5</code>，实际输入是 47×5=235 维，不是 47 维。</p>
+<hr>
+<h2 id="_12">启动方式</h2>
+<pre><code class="language-bash">cd humanoid-policy-viewer
+npm install   # 首次运行
+npm run dev   # 启动开发服务器
+</code></pre>
+<p>访问 <strong>http://localhost:3000</strong> 即可看到 Z1 策略可视化。</p>
+    <footer>Generated from Z1_Policy_Viewer_Integration.md</footer>
+  </main>
+</body>
+</html>

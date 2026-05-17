@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sim2Sim 指南：Isaac Lab → MuJoCo 策略验证</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3, h4 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2.1rem; margin-top: 0; }
+h2 { margin-top: 2.2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+img { max-width: 100%; height: auto; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="sim2sim-isaac-lab-mujoco">Sim2Sim 指南：Isaac Lab → MuJoCo 策略验证</h1>
+<p>训练在 Isaac Lab (PhysX) 完成，部署前需要在 MuJoCo 中验证策略鲁棒性。
+本文档记录 sim2sim 完整流程、参数匹配清单、已知问题和改进方向。</p>
+<hr>
+<h2 id="1">1. 整体流程</h2>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│                    Isaac Lab (训练侧)                     │
+│                                                         │
+│  URDF ──→ PhysX 解析 ──→ 强化学习训练 ──→ 输出 .pt 模型   │
+│  (12 DOF, fixed arms)    (隐式PD)         (policy weights)│
+│                                                         │
+│  关键配置文件:                                            │
+│  magiclab.py → 定义 Kp/Kd, armature, init_state 等       │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+                       │  sim2sim 迁移 (本文档重点)
+                       │  需要匹配的参数见 §3
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│                   MuJoCo (验证/部署侧)                    │
+│                                                         │
+│  MJCF ──→ MuJoCo 解析 ──→ 加载 .pt 模型 ──→ 播放策略      │
+│  (12 DOF, fixed arms)    (显式PD)                        │
+│                                                         │
+│  关键文件:                                               │
+│  MAGICBOTZ1.xml → 机器人模型定义                          │
+│  mujoco_deploy.py / mujoco_sim2sim.py → 部署脚本         │
+└─────────────────────────────────────────────────────────┘
+</code></pre>
+<p>三步核心工作：
+1. <strong>URDF → MJCF 模型转换</strong> — 确保自由度、质量惯量、关节限位一致
+2. <strong>参数匹配</strong> — Kp/Kd、armature、初始角度、观测缩放等逐一校核
+3. <strong>sim2sim 迁移验证</strong> — 在 MuJoCo 中加载策略，检查行走效果</p>
+<hr>
+<h2 id="2-dof">2. 自由度 (DOF) 对比</h2>
+<h3 id="21-urdf-magicbotz1_12dof_arm_ready_posurdf">2.1 URDF (<code>MagicBotZ1_12dof_arm_ready_pos.urdf</code>)</h3>
+<pre><code>自由关节 (revolute):  12 个 (仅腿部)
+  ├─ 左腿: hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll
+  └─ 右腿: hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll
+
+固定关节 (fixed):     14 个 (手臂+腰部+头部)
+  ├─ waist_yaw                                          ← fixed
+  ├─ head_yaw                                           ← fixed
+  ├─ 左臂: shoulder_pitch/roll/yaw, elbow, wrist_yaw   ← 全部 fixed
+  └─ 右臂: shoulder_pitch/roll/yaw, elbow, wrist_yaw   ← 全部 fixed
+
+总 DOF = 12 (腿部)
+</code></pre>
+<h3 id="22-mjcf-magicbotz1xml">2.2 MJCF (<code>MAGICBOTZ1.xml</code>) — 当前状态</h3>
+<pre><code>自由关节 (revolute):  12 个 (仅腿部)  ← 和 URDF 一致
+固定 (无joint元素):   14 个 (手臂+腰部+头部)  ← 和 URDF 一致
+
+总 DOF = 12
+浮动基座 (free joint) = +6 (位置 xyz + 姿态 quat)
+总广义坐标维度 = 12 + 7 (quat) = 19
+</code></pre>
+<h3 id="23-fixed-2026-05-06">2.3 手臂 fixed 修复 (2026-05-06)</h3>
+<p>URDF 中手臂关节全部是 <code>type="fixed"</code>，但原 MJCF 中是 revolute。
+sim2sim 脚本只控制 12 个腿部关节，手臂在 MuJoCo 中无控自由摆动，导致质心偏移。</p>
+<p><strong>修复</strong>：移除 MJCF 中手臂/腰部/头部的 <code>&lt;joint&gt;</code> 元素，将 URDF fixed joint 的 rpy 烘烤到 MJCF body 的 <code>euler</code> 属性。</p>
+<table>
+<thead>
+<tr>
+<th>Body</th>
+<th>URDF rpy</th>
+<th>MJCF euler</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>link_la1 / link_ra1</td>
+<td>(0, 0.2, 0)</td>
+<td><code>euler="0 0.2 0"</code></td>
+<td>肩俯仰 11.5°</td>
+</tr>
+<tr>
+<td>link_la2</td>
+<td>(0.15, 0, 0)</td>
+<td><code>euler="0.15 0 0"</code></td>
+<td>左肩侧摆 8.6°</td>
+</tr>
+<tr>
+<td>link_ra2</td>
+<td>(-0.15, 0, 0)</td>
+<td><code>euler="-0.15 0 0"</code></td>
+<td>右肩侧摆 -8.6°</td>
+</tr>
+<tr>
+<td>link_la4 / link_ra4</td>
+<td>(0, 1, 0)</td>
+<td><code>euler="0 1 0"</code></td>
+<td>肘弯曲 57°</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="3">3. 参数匹配清单</h2>
+<p>所有物理/观测参数从 Isaac Lab 训练配置 <code>magiclab.py</code> 中逐一对应搬运到 MuJoCo 脚本。</p>
+<h3 id="31">3.1 已对齐的参数</h3>
+<table>
+<thead>
+<tr>
+<th>类别</th>
+<th>参数</th>
+<th>Isaac Lab 来源</th>
+<th>MuJoCo 对齐</th>
+<th>匹配方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>自由度</strong></td>
+<td>12 revolute + fixed arms</td>
+<td>URDF joint type</td>
+<td>MJCF 无 joint body</td>
+<td>删 joint 元素</td>
+</tr>
+<tr>
+<td><strong>初始角度</strong></td>
+<td><code>[-0.35, 0, 0, 0.7, -0.35, 0] ×2</code></td>
+<td><code>init_state.joint_pos</code></td>
+<td><code>reset_sim()</code> 设置 qpos</td>
+<td>手动搬运</td>
+</tr>
+<tr>
+<td><strong>初始高度</strong></td>
+<td>z = 0.69</td>
+<td><code>init_state.pos</code></td>
+<td><code>data.qpos[2] = 0.69</code></td>
+<td>手动搬运</td>
+</tr>
+<tr>
+<td><strong>质量/惯量</strong></td>
+<td>各 link 的 mass, inertia</td>
+<td>URDF <code>&lt;inertial&gt;</code></td>
+<td>MJCF <code>&lt;inertial&gt;</code></td>
+<td>直接复制</td>
+</tr>
+<tr>
+<td><strong>Kp (stiffness)</strong></td>
+<td><code>[100,100,100,150,60,60]×2</code></td>
+<td><code>IdealPDActuator.stiffness</code></td>
+<td>代码显式 PD</td>
+<td>手动搬运</td>
+</tr>
+<tr>
+<td><strong>Kd (damping)</strong></td>
+<td><code>[4,4,4,5,3,3]×2</code></td>
+<td><code>IdealPDActuator.damping</code></td>
+<td>代码显式 PD</td>
+<td>手动搬运</td>
+</tr>
+<tr>
+<td><strong>Armature (hip/knee)</strong></td>
+<td>0.02863</td>
+<td><code>IdealPDActuator.armature</code></td>
+<td><code>model.dof_armature</code></td>
+<td>代码设置</td>
+</tr>
+<tr>
+<td><strong>Armature (ankle)</strong></td>
+<td>0.01503</td>
+<td><code>IdealPDActuator.armature</code></td>
+<td><code>model.dof_armature</code></td>
+<td>代码设置</td>
+</tr>
+<tr>
+<td><strong>关节阻尼</strong></td>
+<td>默认 0</td>
+<td>Isaac Lab 默认</td>
+<td><code>model.dof_damping = 0</code></td>
+<td>代码清零</td>
+</tr>
+<tr>
+<td><strong>力矩限制</strong></td>
+<td><code>[120,120,120,120,50,50]×2</code></td>
+<td><code>effort_limit</code></td>
+<td><code>np.clip(tau, -limit, limit)</code></td>
+<td>手动搬运</td>
+</tr>
+<tr>
+<td><strong>Action scale</strong></td>
+<td>0.25</td>
+<td>环境配置</td>
+<td>0.25</td>
+<td>手动搬运</td>
+</tr>
+<tr>
+<td><strong>Timestep</strong></td>
+<td>0.002 (500 Hz)</td>
+<td><code>sim_cfg.dt</code></td>
+<td>MJCF <code>timestep=0.002</code></td>
+<td>直接一致</td>
+</tr>
+<tr>
+<td><strong>Decimation</strong></td>
+<td>10 → 50 Hz 控制</td>
+<td>环境配置</td>
+<td><code>DECIMATION=10</code></td>
+<td>手动一致</td>
+</tr>
+<tr>
+<td><strong>Obs 缩放</strong></td>
+<td>ang_vel=0.2, joint_vel=0.05</td>
+<td><code>ObservationCfg</code></td>
+<td>脚本中对应</td>
+<td>手动搬运</td>
+</tr>
+<tr>
+<td><strong>Obs history</strong></td>
+<td>5 帧，per-term interleaving</td>
+<td>训练配置</td>
+<td>一致</td>
+<td>手动搬运</td>
+</tr>
+<tr>
+<td><strong>Action clipping</strong></td>
+<td>[-1, 1]</td>
+<td>训练配置</td>
+<td><code>np.clip(act, -1, 1)</code></td>
+<td>手动搬运</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32">3.2 参数来源路径</h3>
+<pre><code>Isaac Lab 侧:
+  magiclab.py
+  └─ MAGICLAB_Z1_12DOF_CFG
+      ├─ init_state.joint_pos    → 默认关节角
+      ├─ init_state.pos          → 初始高度 (0.69)
+      ├─ actuators[&quot;legs&quot;]       → Kp, Kd, armature (hip/knee)
+      └─ actuators[&quot;feet&quot;]       → Kp, Kd, armature (ankle)
+
+MuJoCo 侧:
+  mujoco_sim2sim.py
+  ├─ Z1RobotConfig              → Kp, Kd, armature, tau_limit
+  ├─ Z1ContactConfig            → 接触参数 (friction, solref, solimp)
+  └─ Z1ObsConfig                → 观测缩放、gait 参数
+
+  MAGICBOTZ1.xml
+  └─ &lt;inertial&gt;                 → 质量/惯量 (与 URDF 一致)
+  └─ &lt;body pos=&quot;...&quot;&gt;           → 连杆长度/偏移 (与 URDF 一致)
+  └─ &lt;joint range=&quot;...&quot;&gt;        → 关节限位 (与 URDF 一致)
+</code></pre>
+<h3 id="33-2026-05-06-v2">3.3 已修复的差异（2026-05-06 v2）</h3>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>修复前</th>
+<th>修复后</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PD 控制频率</strong></td>
+<td>计算一次，保持 10 步</td>
+<td>每个物理子步重新计算</td>
+<td>大幅缩小动态响应差异</td>
+</tr>
+<tr>
+<td><strong>接触参数</strong></td>
+<td>MJCF 默认 solref/solimp</td>
+<td>校准为更硬的接触</td>
+<td>更接近 PhysX 刚体接触</td>
+</tr>
+<tr>
+<td><strong>摩擦系数</strong></td>
+<td>MJCF 默认 1.0</td>
+<td>匹配训练随机化中值 0.65</td>
+<td>更接近训练分布</td>
+</tr>
+</tbody>
+</table>
+<h3 id="34">3.4 仍存在的差异（物理引擎级别，无法消除）</h3>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>Isaac Lab (PhysX)</th>
+<th>MuJoCo</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PD 公式</strong></td>
+<td>隐式: <code>τ = Kp*(tgt - q_next) - Kd*dq_next</code></td>
+<td>显式: <code>τ = Kp*(tgt - q_cur) - Kd*dq_cur</code></td>
+<td>稳定性边界不同</td>
+</tr>
+<tr>
+<td><strong>接触求解器</strong></td>
+<td>TGS (Technical Gauss-Seidel)</td>
+<td>Newton 解析</td>
+<td>足端接触力分布不同</td>
+</tr>
+<tr>
+<td><strong>积分方式</strong></td>
+<td>PhysX 隐式积分</td>
+<td>MuJoCo 半隐式 Euler</td>
+<td>高频动态不同</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="4-vs-pd">4. 隐式 vs 显式 PD — 核心差异详解</h2>
+<p>这是 sim2sim gap 的根本来源。即使 PD 每步重新计算，隐式/显式的数学差异仍存在。</p>
+<h3 id="41-isaac-lab-pd">4.1 Isaac Lab (隐式 PD)</h3>
+<pre><code>Isaac Lab 使用 IdealPDActuatorCfg，把 Kp/Kd 作为约束参数传给 PhysX
+
+公式: τ = Kp * (target - q_next) - Kd * dq_next
+       其中 q_next, dq_next 是未知量，被 PhysX 隐式求解
+
+特性:
+  - 无条件稳定（即使高增益）
+  - 等效阻尼包含求解器的数值阻尼
+  - 策略会学会利用这种隐含的稳定性
+</code></pre>
+<h3 id="42-mujoco-pd">4.2 MuJoCo (显式 PD)</h3>
+<pre><code>sim2sim 代码每个物理子步重新计算力矩:
+  τ = Kp * (target - q_current) - Kd * dq_current
+  然后把 τ 传给 MuJoCo 的 motor actuator
+
+特性:
+  - 物理上更直观
+  - 高增益时可能震荡（不如隐式 PD 稳定）
+  - 同样的 Kp/Kd 值产生不同的动态响应
+</code></pre>
+<h3 id="43-humanoid-gym">4.3 关键洞察：Humanoid-Gym 的做法</h3>
+<p>Humanoid-Gym <strong>不是</strong>用隐式 PD 训练再转到显式 MuJoCo。它采用的做法是：
+- <strong>训练侧和部署侧都使用显式 PD</strong>：在 Isaac Gym 中手动计算 τ 并通过 <code>set_dof_actuation_force_tensor</code> 注入
+- 这样两侧的 PD 公式完全一致，消除了最大的 sim2sim gap 来源
+- 配合大量 domain randomization（摩擦 0.1–2.0、质量 ±5kg、动作噪声/延迟）使策略对残余差异鲁棒</p>
+<p><strong>启示</strong>：如果要根本消除 PD 差异，需要在 Isaac Lab 中也切换到显式 PD（见 §8.3）。</p>
+<hr>
+<h2 id="5-sim2sim">5. 当前 Sim2Sim 脚本</h2>
+<table>
+<thead>
+<tr>
+<th>版本</th>
+<th>脚本</th>
+<th>风格</th>
+<th>参数</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Manual</strong></td>
+<td><code>sim2sim/mujoco_manual.py</code></td>
+<td>OOP 类</td>
+<td>Kd+30%, 硬接触, PD/子步</td>
+<td><strong>调优版</strong> (部署用)</td>
+</tr>
+<tr>
+<td><strong>Humanoid-Gym</strong></td>
+<td><code>sim2sim/mujoco_humanoid_gym.py</code></td>
+<td>配置类</td>
+<td>原始训练值</td>
+<td>基准对比用</td>
+</tr>
+</tbody>
+</table>
+<h3 id="manual-sim2sim-gap">Manual 版（推荐，包含 sim2sim gap 缓解措施）</h3>
+<pre><code class="language-bash">python sim2sim/mujoco_manual.py \
+    --mjcf ~/magicbot-z1_description/mjcf/MAGICBOTZ1.xml \
+    --policy logs/rsl_rl/&lt;run&gt;/exported/policy.pt \
+    --keyboard --num_steps 10000
+</code></pre>
+<ul>
+<li>Kd 增加 ~30% 补偿隐式 PD 的数值阻尼</li>
+<li>接触参数校准 (solref=<code>-3000 -300</code>, friction=<code>0.65</code>)</li>
+<li>PD 力矩每个物理子步重新计算</li>
+<li>支持 JIT <code>.pt</code> 和 ONNX 模型</li>
+<li>支持键盘实时控制速度指令</li>
+</ul>
+<h3 id="humanoid-gym">Humanoid-Gym 版（基准，使用原始训练参数）</h3>
+<pre><code class="language-bash">python sim2sim/mujoco_humanoid_gym.py --sim MuJoCo \
+    --mjcf ~/magicbot-z1_description/mjcf/MAGICBOTZ1.xml \
+    --checkpoint logs/rsl_rl/&lt;run&gt;/model_NNNN.pt \
+    --record /tmp/video.mp4 --duration 20 --vel_x 0.5 --headless
+</code></pre>
+<ul>
+<li>配置类架构 (<code>Z1SimConfig</code>, <code>Z1RobotConfig</code>, <code>Z1ObsConfig</code>)</li>
+<li>使用与训练完全一致的 Kp/Kd/接触参数</li>
+<li>支持 EGL 录制 + 键盘实时控制</li>
+<li>可与 Manual 版对比验证调优效果</li>
+</ul>
+<hr>
+<h2 id="6-bugfall-detection">6. 已修复的 Bug：Fall Detection</h2>
+<p>MuJoCo 四元数布局：<code>qpos[3:7] = (w, x, y, z)</code>，归一化约束 <code>w² + x² + y² + z² = 1</code>。</p>
+<table>
+<thead>
+<tr>
+<th>脚本</th>
+<th>检测条件</th>
+<th>等价于</th>
+<th>直立时 (w≈1)</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mujoco_record_video.py</code>（旧版，已删除）</td>
+<td><code>qpos[3]² + qpos[4]² + qpos[5]²</code></td>
+<td><code>w² + x² + y²</code> = <code>1 - z²</code></td>
+<td><strong>1.0 &gt; 0.5 → 永远 True</strong></td>
+<td>BUG</td>
+</tr>
+<tr>
+<td><code>mujoco_sim2sim.py</code></td>
+<td><code>qpos[4]² + qpos[5]² + qpos[6]²</code></td>
+<td><code>x² + y² + z²</code> = <code>1 - w²</code></td>
+<td>0 &lt; 0.5 → False</td>
+<td>正确</td>
+</tr>
+</tbody>
+</table>
+<p>旧 Bug 导致每步触发 reset，机器人从未真正运行超过 1 个控制步。已于 2026-05-06 修复。</p>
+<hr>
+<h2 id="7-sim2sim-gap">7. Sim2Sim Gap 分析</h2>
+<h3 id="71">7.1 已应用的缓解措施</h3>
+<table>
+<thead>
+<tr>
+<th>措施</th>
+<th>效果</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PD 每物理子步重新计算</td>
+<td>修复力矩保持问题，接近隐式 PD 的更新频率</td>
+<td><strong>已应用</strong></td>
+</tr>
+<tr>
+<td>接触参数校准 (solref/solimp)</td>
+<td>MuJoCo 接触更硬，更接近 PhysX 刚体穿透</td>
+<td><strong>已应用</strong></td>
+</tr>
+<tr>
+<td>摩擦系数匹配训练中值 (0.65)</td>
+<td>接近训练域随机化的均值</td>
+<td><strong>已应用</strong></td>
+</tr>
+<tr>
+<td>手臂 fixed</td>
+<td>消除手臂无控摆动导致的质心偏移</td>
+<td><strong>已应用</strong></td>
+</tr>
+<tr>
+<td>Fall detection 修复</td>
+<td>允许正确运行和摔倒检测</td>
+<td><strong>已应用</strong></td>
+</tr>
+</tbody>
+</table>
+<h3 id="72-gap">7.2 剩余 Gap 根因</h3>
+<table>
+<thead>
+<tr>
+<th>优先级</th>
+<th>根因</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>隐式 vs 显式 PD</td>
+<td>公式本质不同，见 §4。显式 PD 高增益时等效刚度/阻尼不同</td>
+</tr>
+<tr>
+<td>2</td>
+<td>接触模型差异</td>
+<td>PhysX 刚体穿透 vs MuJoCo 软约束，接触力分布和断开时机不同</td>
+</tr>
+<tr>
+<td>3</td>
+<td>策略过拟合 PhysX</td>
+<td>RL 策略利用了隐式 PD 的无条件稳定性</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="8">8. 改进计划与实验记录</h2>
+<p><strong>测试条件</strong>：s2_gentle best model (<code>model_9900.pt</code> / exported <code>policy.pt</code>)，vel_x=0.5，1000 control steps (20s)</p>
+<h3 id="81">8.1 实验对比表</h3>
+<p><strong>测试条件</strong>：s2_gentle model_9900 (<code>exported/policy.pt</code>)，vel_x=0.5，1000 control steps (20s)</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>实验</th>
+<th>参数变更</th>
+<th>20s 摔倒</th>
+<th>视频文件夹</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>02</td>
+<td>Kd×1.3 + 硬接触 + PD/子步</td>
+<td>Kd+30%, solref=-3000-300, friction=0.65</td>
+<td>14</td>
+<td><code>s_model_9900_exp02_kd13/</code></td>
+</tr>
+<tr>
+<td>A</td>
+<td>Kd×1.5</td>
+<td>Kd+50% (vs 训练值), 其余同 02</td>
+<td>14</td>
+<td><code>s_model_9900_expA_kd15/</code></td>
+</tr>
+<tr>
+<td>B</td>
+<td>动作平滑 EMA</td>
+<td>action EMA α=0.7, 其余同 02</td>
+<td>14</td>
+<td><code>s_model_9900_expB_ema07/</code></td>
+</tr>
+<tr>
+<td>C</td>
+<td>摩擦 1.0</td>
+<td>friction=1.0 (匹配PhysX), 其余同 02</td>
+<td>14</td>
+<td><code>s_model_9900_expC_friction10/</code></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>视频路径：<code>Magicbot_Z1/videos/sim2sim_experiments/&lt;视频文件夹&gt;/mujoco_manual.mp4</code>
+每个视频右上角已烧录标签（run name + model + falls + params）</p>
+</blockquote>
+<p><strong>结论</strong>：A/B/C 三项调参均无效，摔倒次数与 02 完全相同（14 次）。
+说明 sim2sim gap 的瓶颈不在 Kd/动作平滑/摩擦，而是<strong>隐式 vs 显式 PD 的根本差异</strong>（§4）。
+靠部署侧调参已到极限，Step 3（训练侧切换显式 PD）是唯一出路。</p>
+<h3 id="82-step-1-kd-30">8.2 Step 1：增大 Kd ~30%（已应用）</h3>
+<pre><code class="language-python"># mujoco_manual.py DEFAULT_KD
+# 原始: [4, 4, 4, 5, 3, 3] × 2
+# 调优: [5.2, 5.2, 5.2, 6.5, 3.9, 3.9] × 2  (+30%)
+</code></pre>
+<h3 id="83-step-2">8.3 Step 2：更硬的接触参数（已应用）</h3>
+<pre><code class="language-python"># MJCF 默认:  solref = (-500, -800)
+# 调优后:     solref = (-3000, -300)
+# 摩擦:       0.65 (训练随机化 0.3–1.0 中值)
+# solimp:     (0.9, 0.99, 0.001, 0.5, 2)
+</code></pre>
+<h3 id="84-mujoco_manualpy">8.4 后续可尝试的调参（在 mujoco_manual.py 中修改）</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>调整项</th>
+<th>修改方式</th>
+<th>原理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td><strong>Kd 加大到 ×1.5 或 ×2.0</strong></td>
+<td><code>DEFAULT_KD</code> 乘以 1.5/2.0</td>
+<td>更强阻尼抑制显式 PD 震荡</td>
+</tr>
+<tr>
+<td>B</td>
+<td><strong>动作平滑 (EMA)</strong></td>
+<td>step() 中 <code>action = α*new + (1-α)*prev</code>，α=0.7</td>
+<td>模仿隐式 PD 的平滑响应，减少策略抖动</td>
+</tr>
+<tr>
+<td>C</td>
+<td><strong>更高摩擦</strong></td>
+<td><code>CONTACT_FOOT_FRICTION = (1.0, ...)</code></td>
+<td>PhysX 训练用 static=1.0，当前用中值 0.65 可能偏低</td>
+</tr>
+<tr>
+<td>D</td>
+<td><strong>更硬接触</strong></td>
+<td><code>CONTACT_FOOT_SOLREF = (-5000, -500)</code></td>
+<td>更接近 PhysX 刚体穿透</td>
+</tr>
+<tr>
+<td>E</td>
+<td><strong>降低 Kp 10%</strong></td>
+<td><code>DEFAULT_KP * 0.9</code></td>
+<td>显式 PD 高增益容易震荡，略降 Kp 换稳定性</td>
+</tr>
+<tr>
+<td>F</td>
+<td><strong>重力补偿前馈</strong></td>
+<td>在 PD 力矩上叠加静态重力补偿项</td>
+<td>减少关节负担，让 PD 只负责动态跟踪</td>
+</tr>
+</tbody>
+</table>
+<h3 id="85-step-3-pd">8.5 Step 3：训练侧切换到显式 PD（需重新训练）</h3>
+<p>Step 1+2 验证后效果有限，<strong>Step 3 是根本解决方案</strong>。</p>
+<pre><code class="language-python"># magiclab.py 修改
+from isaaclab.actuators import ExplicitActuatorCfg
+
+actuators={
+    &quot;legs&quot;: ExplicitActuatorCfg(
+        joint_names_expr=[&quot;.*&quot;], effort_limit=120,
+        stiffness=100.0, damping=4.0,
+    ),
+}
+</code></pre>
+<p>配合增加 domain randomization：
+- 摩擦范围 0.1–2.0（当前 0.3–1.0 太窄）
+- 动作延迟（0–0.5 timestep）+ 动作噪声
+- 随机推力扰动</p>
+<h3 id="86">8.6 正弦波校准法（辅助）</h3>
+<ol>
+<li>给关节输入正弦波 <code>q_ref = A*sin(2πft)</code></li>
+<li>对比 Isaac Lab 和 MuJoCo 关节响应</li>
+<li>调 Kd/solref 直到轨迹重合</li>
+</ol>
+<hr>
+<h2 id="9">9. 参考资料</h2>
+<ul>
+<li><a href="https://github.com/roboterax/humanoid-gym/blob/main/humanoid/scripts/sim2sim.py">Humanoid-Gym sim2sim 实现</a> — 注意：该项目两侧都用显式 PD，消除了隐式/显式差异</li>
+<li><a href="https://isaac-sim.github.io/IsaacLab/main/source/experimental-features/newton-physics-integration/sim-to-sim.html">Isaac Lab Newton Sim2Sim 文档</a></li>
+<li><a href="https://developer.nvidia.com/blog/train-a-quadruped-locomotion-policy-and-simulate-cloth-manipulation-with-nvidia-isaac-lab-and-newton/">NVIDIA Blog: Newton + Isaac Lab</a></li>
+</ul>
+    <footer>Generated from Sim2Sim_Guide.md</footer>
+  </main>
+</body>
+</html>
