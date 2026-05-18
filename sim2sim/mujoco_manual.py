@@ -12,17 +12,17 @@ Usage:
         --policy logs/rsl_rl/.../exported/policy.pt \
         --deploy_cfg logs/rsl_rl/.../params/deploy.yaml
 
-    # Phase-aware terrain (auto-selects terrain for p3b):
+    # Phase-aware terrain (auto-selects the latest verified RTX artifact baseline):
     python sim2sim/mujoco_manual.py \
         --mjcf ../magicbot-z1_description/mjcf/MAGICBOTZ1.xml \
         --policy policy.pt --deploy_cfg deploy.yaml \
-        --phase p3b --keyboard
+        --phase p3_fine --keyboard
 
     # Explicit terrain override:
     python sim2sim/mujoco_manual.py \
         --mjcf ../magicbot-z1_description/mjcf/MAGICBOTZ1.xml \
         --policy policy.pt --deploy_cfg deploy.yaml \
-        --terrain p3b --record /tmp/output.mp4
+        --terrain p3_coarse --record /tmp/output.mp4
 
     # Manual joint control (no policy):
     python sim2sim/mujoco_manual.py \
@@ -31,9 +31,11 @@ Usage:
 """
 
 import argparse
+import ctypes
 import math
 import os
 import time
+from pathlib import Path
 
 # Set EGL for offscreen rendering on Linux (Windows uses default wgl)
 if os.name != "nt":
@@ -43,133 +45,154 @@ import numpy as np
 import yaml
 
 # Phase → terrain mapping for auto terrain selection
-PHASE_TERRAIN = {
-    "p1": None,       # flat ground
-    "p2": None,       # flat ground
-    "p3": "p3",       # gentle terrain
-    "p3b": "p3b",     # intermediate terrain
-    "p4": "p3b",      # rough → use p3b for sim2sim
+# RTX run artifacts are the baseline for local play / recording.
+# Flat phases keep terrain_type=None. Terrain-bearing phases map to the exact
+# sub-phase snapshot that actually trained on RTX.
+RTX_ARTIFACT_BASELINES = {
+    "p1_coarse": {"terrain_type": None, "description": "RTX artifact 2026-05-06_15-47-12_p1_coarse"},
+    "p1_fine": {"terrain_type": None, "description": "RTX artifact 2026-05-06_17-40-13_p1_fine"},
+    "p2_coarse": {"terrain_type": None, "description": "RTX artifact 2026-05-15_17-44-46_p2_coarse"},
+    "p2_fine": {"terrain_type": None, "description": "RTX artifact 2026-05-15_19-58-42_p2_fine"},
+    "p3_coarse": {
+        "terrain_type": "p3",
+        "description": "RTX artifact 2026-05-15_21-55-08_p3_coarse",
+        "terrain_length": 24.0,
+        "terrain_width": 8.0,
+        "horizontal_scale": 0.1,
+        "grid_width": 0.6,
+        "max_elev": 0.25,
+        "random_grid_height_range": (0.0, 0.25),
+        "layout": [("flat", 0.35), ("random_grid", 0.15), ("flat", 0.35), ("random_grid", 0.15)],
+    },
+    "p3_fine": {
+        "terrain_type": "p3",
+        "description": "RTX artifact 2026-05-16_12-13-26_p3_fine",
+        "terrain_length": 24.0,
+        "terrain_width": 8.0,
+        "horizontal_scale": 0.1,
+        "grid_width": 0.6,
+        "max_elev": 0.35,
+        "random_grid_height_range": (0.0, 0.35),
+        "layout": [("flat", 0.35), ("random_grid", 0.15), ("flat", 0.35), ("random_grid", 0.15)],
+    },
+}
+
+PHASE_ARTIFACT_BASELINES = {
+    "p1": "p1_fine",
+    "p1_coarse": "p1_coarse",
+    "p1_fine": "p1_fine",
+    "p2": "p2_fine",
+    "p2_coarse": "p2_coarse",
+    "p2_fine": "p2_fine",
+    "p3": "p3_fine",
+    "p3_coarse": "p3_coarse",
+    "p3_fine": "p3_fine",
+}
+
+TERRAIN_ARTIFACT_ALIASES = {
+    "p3": "p3_fine",
+    "p3b": "p3_fine",
 }
 
 
-# ---------------------------------------------------------------------------
-# Terrain generation (matching Isaac Sim p3b config)
-# ---------------------------------------------------------------------------
-def generate_terrain_data(terrain_type="p3b", seed=42, difficulty=1.0):
-    """Generate terrain heightmap matching Isaac Sim training config.
+def resolve_artifact_baseline(phase=None, terrain=None, flat=False):
+    if flat:
+        return None
 
-    Args:
-        terrain_type: "p3" or "p3b"
-        seed: Random seed for reproducibility
-        difficulty: Scale factor for terrain height (0-1). At 1.0, full height.
-                    In Isaac Lab, actual difficulty = terrain_level / (num_rows - 1).
-                    For p3_coarse with level ~5/9, difficulty ≈ 0.625.
+    requested = terrain if terrain is not None else phase
+    if requested is None:
+        return None
 
-    Returns: (nrow, ncol, half_x, half_y, max_elev, hmap)
-    """
+    if requested in TERRAIN_ARTIFACT_ALIASES:
+        mapped = TERRAIN_ARTIFACT_ALIASES[requested]
+        if requested == "p3b":
+            print(f"[WARN] Legacy selector '{requested}' is deprecated; using RTX artifact baseline '{mapped}'")
+        requested = mapped
+    elif requested in PHASE_ARTIFACT_BASELINES:
+        requested = PHASE_ARTIFACT_BASELINES[requested]
+
+    if requested not in RTX_ARTIFACT_BASELINES:
+        raise ValueError(
+            f"No RTX artifact baseline defined for '{requested}'. "
+            "Use one of: p1_coarse, p1_fine, p2_coarse, p2_fine, p3_coarse, p3_fine, or phase aliases p1/p2/p3."
+        )
+    return requested
+
+
+# ---------------------------------------------------------------------------
+# Terrain generation (matching RTX training artifacts)
+# ---------------------------------------------------------------------------
+def generate_terrain_data(artifact_key="p3_fine", seed=42, difficulty=1.0):
+    """Generate terrain heightmap from an RTX artifact baseline."""
+    profile = RTX_ARTIFACT_BASELINES[artifact_key]
+    terrain_type = profile["terrain_type"]
+    if terrain_type is None:
+        raise ValueError(f"Artifact baseline '{artifact_key}' is flat and does not need hfield generation")
+
     difficulty = float(np.clip(difficulty, 0.0, 1.0))
-    H_SCALE = 0.1  # meters per grid cell (matches Isaac Sim horizontal_scale)
-
-    if terrain_type == "p3":
-        # p3: gentle terrain — flat 70% + random_grid 30% (height 0-0.4m)
-        TERRAIN_L = 24.0
-        TERRAIN_W = 8.0
-        MAX_ELEV = 0.4  # match IsaacSim grid_height_range=(0.0, 0.4)
-    elif terrain_type == "p3b":
-        # p3b: intermediate terrain — flat 50% + random_grid 30% + stairs 10% + boxes 10%
-        TERRAIN_L = 24.0
-        TERRAIN_W = 8.0
-        MAX_ELEV = 0.6
-    else:
-        raise ValueError(f"Unknown terrain type: {terrain_type}")
+    H_SCALE = profile["horizontal_scale"]
+    TERRAIN_L = profile["terrain_length"]
+    TERRAIN_W = profile["terrain_width"]
+    MAX_ELEV = profile["max_elev"]
+    GRID_WIDTH = profile["grid_width"]
+    RANDOM_GRID_HEIGHT_RANGE = profile["random_grid_height_range"]
+    LAYOUT = profile["layout"]
 
     ncol = int(TERRAIN_L / H_SCALE)
     nrow = int(TERRAIN_W / H_SCALE)
     rng = np.random.default_rng(seed)
     hmap = np.zeros((nrow, ncol), dtype=np.float64)
 
-    def fill_random_grid(r0, r1, c0, c1, h_range=(0.0, 0.6)):
-        gw = max(2, int(0.45 / H_SCALE))
-        for i in range(r0, r1 - gw + 1, gw):
-            for j in range(c0, c1 - gw + 1, gw):
-                h = rng.uniform(h_range[0], h_range[1]) / MAX_ELEV
-                hmap[i:i+gw, j:j+gw] = h
+    gw = max(2, int(round(GRID_WIDTH / H_SCALE)))
+    protrusion_coverage = float(sum(proportion for stype, proportion in LAYOUT if stype != "flat"))
+    protrusion_coverage = float(np.clip(protrusion_coverage, 0.0, 1.0))
+    target_active_cells = int(round(nrow * ncol * protrusion_coverage))
 
-    def fill_stairs(r0, r1, c0, c1):
-        sw = max(2, int(0.3 / H_SCALE))
-        sh = rng.uniform(0.05, 0.23)
-        n_steps = (c1 - c0) // sw
-        for s in range(n_steps):
-            h = min((s + 1) * sh / MAX_ELEV, 1.0)
-            hmap[r0:r1, c0+s*sw:min(c0+(s+1)*sw, c1)] = h
+    # Use sparse smooth bumps with compact support so heights vary continuously
+    # from 0 to the sampled peak instead of forming flat step-like blocks.
+    rr, cc = np.meshgrid(np.arange(nrow), np.arange(ncol), indexing="ij")
+    avg_radius = max(2.0, gw * 0.55)
+    bump_area = math.pi * avg_radius * avg_radius
+    num_bumps = max(1, int(round(target_active_cells / max(1.0, bump_area))))
+    num_bumps = min(num_bumps, max(1, nrow * ncol // 16))
 
-    def fill_boxes(r0, r1, c0, c1):
-        gw = max(2, int(0.45 / H_SCALE))
-        for i in range(r0, r1 - gw + 1, gw):
-            for j in range(c0, c1 - gw + 1, gw):
-                h = rng.uniform(0.0, 0.4) / MAX_ELEV
-                hmap[i:i+gw, j:j+gw] = h
+    for _ in range(num_bumps):
+        center_r = rng.integers(0, nrow)
+        center_c = rng.integers(0, ncol)
+        radius = rng.uniform(gw * 0.4, gw * 0.85)
+        peak = rng.uniform(RANDOM_GRID_HEIGHT_RANGE[0], RANDOM_GRID_HEIGHT_RANGE[1]) / MAX_ELEV
 
-    # Layout depends on terrain type
-    if terrain_type == "p3":
-        # p3: gentle — flat 70% + random_grid 30%, alternating sections
-        sections = [
-            (0,              ncol // 3,     "flat"),
-            (ncol // 3,      ncol // 2,     "random_grid"),
-            (ncol // 2,      5 * ncol // 6, "flat"),
-            (5 * ncol // 6,  ncol,          "random_grid"),
-        ]
-    elif terrain_type == "p3b":
-        # p3b: intermediate — full mix
-        sections = [
-            (0,              ncol // 6,      "flat"),
-            (ncol // 6,      ncol // 3,      "random_grid"),
-            (ncol // 3,      ncol // 2,      "stairs"),
-            (ncol // 2,      2 * ncol // 3,  "flat"),
-            (2 * ncol // 3,  5 * ncol // 6,  "boxes"),
-            (5 * ncol // 6,  ncol,           "random_grid"),
-        ]
+        dist = np.sqrt((rr - center_r) ** 2 + (cc - center_c) ** 2)
+        inside = dist <= radius
+        if not np.any(inside):
+            continue
 
-    for c0, c1, stype in sections:
-        if stype == "random_grid":
-            if terrain_type == "p3":
-                fill_random_grid(0, nrow, c0, c1, h_range=(0.0, 0.4))
-            else:
-                fill_random_grid(0, nrow, c0, c1)
-        elif stype == "stairs":
-            fill_stairs(0, nrow, c0, c1)
-        elif stype == "boxes":
-            fill_boxes(0, nrow, c0, c1)
+        # Raised-cosine bump: exactly 0 outside support, smooth inside.
+        local = 0.5 * (1.0 + np.cos(np.pi * dist[inside] / radius))
+        bump = np.zeros_like(hmap)
+        bump[inside] = peak * local
+        hmap = np.maximum(hmap, bump)
 
-    # Light smoothing (2 passes of 3x3 box filter)
-    for _ in range(2):
-        padded = np.pad(hmap, 1, mode='edge')
-        hmap = (
-            padded[:-2, :-2] + padded[:-2, 1:-1] + padded[:-2, 2:] +
-            padded[1:-1, :-2] + padded[1:-1, 1:-1] + padded[1:-1, 2:] +
-            padded[2:, :-2] + padded[2:, 1:-1] + padded[2:, 2:]
-        ) / 9.0
-
-    # Apply difficulty scaling (match Isaac Lab curriculum level)
     if difficulty < 1.0:
         hmap *= difficulty
         effective_max = MAX_ELEV * difficulty
-        print(f"[TERRAIN] Difficulty={difficulty:.3f}: scaling height to {effective_max:.3f}m "
-              f"(was {MAX_ELEV:.3f}m)")
+        print(f"[TERRAIN] Extra difficulty scale={difficulty:.3f}: scaling height to {effective_max:.3f}m "
+              f"(artifact max {MAX_ELEV:.3f}m)")
     else:
         effective_max = MAX_ELEV
 
-    print(f"[TERRAIN] Generated {terrain_type}: {TERRAIN_L}m x {TERRAIN_W}m, "
-          f"grid {nrow}x{ncol}, elevation [{hmap.min()*MAX_ELEV:.3f}, {hmap.max()*MAX_ELEV:.3f}]m, "
+    print(f"[TERRAIN] Generated artifact '{artifact_key}' ({terrain_type}): {TERRAIN_L}m x {TERRAIN_W}m, "
+          f"grid {nrow}x{ncol}, protrusion_coverage={protrusion_coverage:.2f}, "
+          f"elevation [{hmap.min() * MAX_ELEV:.3f}, {hmap.max() * MAX_ELEV:.3f}]m, "
           f"effective_max={effective_max:.3f}m")
     return nrow, ncol, TERRAIN_L / 2, TERRAIN_W / 2, effective_max, hmap
 
 
-def load_model_with_terrain(mjcf_path, terrain_type, difficulty=1.0):
+def load_model_with_terrain(mjcf_path, artifact_key, difficulty=1.0):
     """Load MuJoCo model with terrain hfield injected via Python API."""
     import mujoco
 
-    nrow, ncol, half_x, half_y, max_elev, terrain_data = generate_terrain_data(terrain_type, difficulty=difficulty)
+    nrow, ncol, half_x, half_y, max_elev, terrain_data = generate_terrain_data(artifact_key, difficulty=difficulty)
 
     # Read original XML
     with open(mjcf_path, 'r') as f:
@@ -207,15 +230,20 @@ def parse_args():
     parser.add_argument("--vel_y", type=float, default=0.0, help="Lateral velocity command (m/s)")
     parser.add_argument("--vel_yaw", type=float, default=0.0, help="Yaw velocity command (rad/s)")
     parser.add_argument("--keyboard", action="store_true", help="Use keyboard for velocity commands")
+    parser.add_argument("--control_file", type=str, default=None,
+                        help="Optional GUI-to-process control file for key commands")
     parser.add_argument("--num_steps", type=int, default=10000, help="Number of control steps")
     parser.add_argument("--terrain_difficulty", type=float, default=None,
-                        help="Scale terrain height by this factor (0-1). Example: current p3_coarse curriculum is about 0.625.")
+                        help="Optional extra height scale (0-1) on top of the RTX artifact baseline.")
     parser.add_argument("--record", type=str, default=None, help="Record video to this path (EGL offscreen)")
-    parser.add_argument("--terrain", type=str, default=None, help="Terrain type: 'p3' or 'p3b'")
+    parser.add_argument("--terrain", type=str, default=None,
+                        help="Artifact terrain selector: p3, p3_coarse, p3_fine. Legacy p3b aliases to p3_fine.")
     parser.add_argument("--phase", type=str, default=None,
-                        help="Phase ID (p1/p2/p3/p3b/p4) — auto-selects terrain. Explicit --terrain takes priority.")
+                        help="Phase or sub-phase ID (p1/p1_fine/p2/p2_fine/p3/p3_fine). Explicit --terrain takes priority.")
     parser.add_argument("--flat", action="store_true",
                         help="Force flat ground (overrides terrain from --phase)")
+    parser.add_argument("--random_spawn", action="store_true",
+                        help="Randomize reset x/y/yaw. On terrain, z is auto-lifted from sampled ground height.")
     parser.add_argument("--show_viewer", action="store_true", default=True, help="Show MuJoCo viewer")
     parser.add_argument("--csv", type=str, default=None, nargs='?', const='auto',
                         help="Log simulation data to CSV. --csv alone auto-names; --csv path.csv uses custom path")
@@ -358,6 +386,13 @@ class KeyboardController:
         self.running = True
         self.viewer_active = False  # set True when MuJoCo viewer callback is registered
         self.panel_visible = True
+        self._user32 = None
+        self._async_keys = {}
+        self._async_prev_down = {}
+        self.control_file = None
+        self._control_offset = 0
+        if os.name == "nt":
+            self._init_windows_async_keys()
 
         # Manual mode state
         if manual_mode:
@@ -376,6 +411,12 @@ class KeyboardController:
 
     def update(self):
         """Poll terminal for key presses (headless / no viewer mode)."""
+        if self._poll_control_file():
+            return
+        if self.control_file is not None:
+            return
+        if self._poll_windows_async_keys():
+            return
         if self.viewer_active:
             return
         try:
@@ -388,6 +429,39 @@ class KeyboardController:
             if select.select([sys.stdin], [], [], 0)[0]:
                 key = sys.stdin.readline().strip()
                 self._apply_key(key)
+
+    def set_control_file(self, path):
+        if not path:
+            return
+        self.control_file = Path(path)
+        self.control_file.parent.mkdir(parents=True, exist_ok=True)
+        self.control_file.touch(exist_ok=True)
+        self._control_offset = self.control_file.stat().st_size
+
+    def _poll_control_file(self):
+        if self.control_file is None or not self.control_file.exists():
+            return False
+        try:
+            current_size = self.control_file.stat().st_size
+            if current_size < self._control_offset:
+                self._control_offset = 0
+            if current_size == self._control_offset:
+                return False
+            handled = False
+            with self.control_file.open("r", encoding="utf-8") as handle:
+                handle.seek(self._control_offset)
+                for raw_line in handle:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    parts = line.split("\t", 1)
+                    key = parts[1] if len(parts) == 2 else parts[0]
+                    self._apply_key(key.strip())
+                    handled = True
+                self._control_offset = handle.tell()
+            return handled
+        except OSError:
+            return False
 
     def _apply_msvcrt(self, key):
         """Convert msvcrt byte to key name and apply."""
@@ -408,6 +482,50 @@ class KeyboardController:
             self._apply_key_manual(key)
         else:
             self._apply_key_policy(key)
+
+    def _init_windows_async_keys(self):
+        """Use Win32 async key polling so focused MuJoCo windows still receive control input."""
+        try:
+            self._user32 = ctypes.windll.user32
+        except Exception:
+            self._user32 = None
+            return
+
+        self._async_keys = {
+            0x26: "up",         # VK_UP
+            0x28: "down",       # VK_DOWN
+            0x25: "left",       # VK_LEFT
+            0x27: "right",      # VK_RIGHT
+            0x51: "q",          # Q
+            0x45: "e",          # E
+            0x20: "space",      # VK_SPACE
+            0x1B: "esc",        # VK_ESCAPE
+        }
+        if self.manual_mode:
+            self._async_keys.update({
+                0x57: "w",          # W
+                0x53: "s",          # S
+                0x52: "r",          # R
+                0x09: "tab",        # VK_TAB
+                0xDB: "lbracket",   # VK_OEM_4  [
+                0xDD: "rbracket",   # VK_OEM_6  ]
+            })
+
+        self._async_prev_down = {vk: False for vk in self._async_keys}
+
+    def _poll_windows_async_keys(self):
+        if not self._user32:
+            return False
+
+        handled = False
+        for vk, key_name in self._async_keys.items():
+            is_down = bool(self._user32.GetAsyncKeyState(vk) & 0x8000)
+            was_down = self._async_prev_down.get(vk, False)
+            if is_down and not was_down:
+                self._apply_key(key_name)
+                handled = True
+            self._async_prev_down[vk] = is_down
+        return handled
 
     def _apply_key_policy(self, key):
         """Key handler for policy (velocity command) mode."""
@@ -492,6 +610,11 @@ def quat_to_rot_matrix(quat_wxyz):
     ])
 
 
+def yaw_to_quat(yaw):
+    half = 0.5 * yaw
+    return np.array([math.cos(half), 0.0, 0.0, math.sin(half)], dtype=np.float64)
+
+
 def compute_gait_phase(sim_time, vel_cmd, period=GAIT_PERIOD):
     cmd_norm = np.linalg.norm(vel_cmd)
     if cmd_norm < 0.02:
@@ -504,12 +627,18 @@ def compute_gait_phase(sim_time, vel_cmd, period=GAIT_PERIOD):
 
 
 class MuJoCoDeploy:
-    def __init__(self, mjcf_path, policy_runner=None, deploy_cfg=None, vel_cmd=None, terrain=None, terrain_difficulty=1.0):
+    def __init__(self, mjcf_path, policy_runner=None, deploy_cfg=None, vel_cmd=None,
+                 terrain_profile=None, terrain_difficulty=1.0, random_spawn=False):
         import mujoco
 
         self.policy = policy_runner
         self.manual_mode = policy_runner is None
         self.vel_cmd = np.array(vel_cmd) if vel_cmd is not None else np.array([0.5, 0.0, 0.0])
+        self.random_spawn = random_spawn
+        self.nominal_base_height = 0.69
+        self.spawn_clearance_margin = 0.015
+        self._rng = np.random.default_rng()
+        self.terrain_meta = None
 
         # PD gains: load from deploy.yaml (training uses IdealPDActuator = explicit PD,
         # same as MuJoCo, so values match directly — no sim2sim boost needed)
@@ -528,9 +657,23 @@ class MuJoCoDeploy:
             self.action_scale = np.full(12, ACTION_SCALE)
             self.action_offset = DEFAULT_JOINT_POS.copy()
 
-        # Load model (with optional terrain)
-        if terrain:
-            self.model = load_model_with_terrain(mjcf_path, terrain, difficulty=terrain_difficulty)
+        # Load model from the resolved RTX artifact baseline.
+        if terrain_profile and RTX_ARTIFACT_BASELINES[terrain_profile]["terrain_type"] is not None:
+            self.model = load_model_with_terrain(mjcf_path, terrain_profile, difficulty=terrain_difficulty)
+            profile = RTX_ARTIFACT_BASELINES[terrain_profile]
+            nrow, ncol, half_x, half_y, max_elev, terrain_data = generate_terrain_data(
+                terrain_profile, difficulty=terrain_difficulty
+            )
+            self.terrain_meta = {
+                "artifact_key": terrain_profile,
+                "nrow": nrow,
+                "ncol": ncol,
+                "half_x": half_x,
+                "half_y": half_y,
+                "max_elev": max_elev,
+                "terrain_data": terrain_data,
+                "layout": profile["layout"],
+            }
         else:
             self.model = mujoco.MjModel.from_xml_path(mjcf_path)
         self.model.opt.timestep = PHYSICS_DT
@@ -551,6 +694,11 @@ class MuJoCoDeploy:
 
         self.leg_qpos_addr = [self.model.jnt_qposadr[jid] for jid in self.leg_joint_ids]
         self.leg_dof_addr = [self.model.jnt_dofadr[jid] for jid in self.leg_joint_ids]
+        self.foot_geom_ids = []
+        for foot_name in ("l_foot", "r_foot"):
+            geom_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, foot_name)
+            if geom_id >= 0:
+                self.foot_geom_ids.append(geom_id)
 
         for jid in self.leg_joint_ids:
             self.model.dof_damping[jid] = 0.0
@@ -581,21 +729,139 @@ class MuJoCoDeploy:
         self.sim_time = 0.0
         self.reset()
 
-    def reset(self):
+    def _sample_spawn_pose(self):
+        if self.terrain_meta is not None:
+            return self._find_zero_height_spawn_pose(randomize=self.random_spawn)
+
+        if self.random_spawn:
+            x = self._rng.uniform(-0.5, 0.5)
+            y = self._rng.uniform(-0.5, 0.5)
+            yaw = self._rng.uniform(-math.pi, math.pi)
+            return x, y, yaw
+        return 0.0, 0.0, 0.0
+
+    def _find_zero_height_spawn_pose(self, randomize):
+        half_x = self.terrain_meta["half_x"]
+        half_y = self.terrain_meta["half_y"]
+        x_margin = min(1.0, half_x * 0.15)
+        y_margin = min(0.5, half_y * 0.2)
+
+        if randomize:
+            for _ in range(400):
+                x = self._rng.uniform(-half_x + x_margin, half_x - x_margin)
+                y = self._rng.uniform(-half_y + y_margin, half_y - y_margin)
+                yaw = self._rng.uniform(-math.pi, math.pi)
+                if self._pose_supports_zero_height_ground(x, y, yaw):
+                    return x, y, yaw
+        else:
+            for radius_scale in np.linspace(0.0, 1.0, 12):
+                for yaw in (0.0, math.pi * 0.5, math.pi, -math.pi * 0.5):
+                    x = (half_x - x_margin) * 0.1 * radius_scale
+                    y = (half_y - y_margin) * 0.1 * radius_scale
+                    for sx, sy in ((1, 1), (1, -1), (-1, 1), (-1, -1), (1, 0), (0, 1), (-1, 0), (0, -1)):
+                        px = x * sx
+                        py = y * sy
+                        if self._pose_supports_zero_height_ground(px, py, yaw):
+                            return px, py, yaw
+
+        print("[WARN] Could not find a strict zero-height spawn patch; falling back to origin with auto-lift")
+        return 0.0, 0.0, 0.0
+
+    def _set_pose_for_spawn_check(self, spawn_x, spawn_y, spawn_yaw):
         import mujoco
-        self.vel_cmd[:] = self._initial_vel_cmd
-        mujoco.mj_resetData(self.model, self.data)
-        self.data.qpos[2] = 0.69
-        self.data.qpos[3] = 1.0
-        self.data.qpos[4:7] = 0.0
+
+        self.data.qpos[0] = spawn_x
+        self.data.qpos[1] = spawn_y
+        self.data.qpos[2] = self.nominal_base_height
+        self.data.qpos[3:7] = yaw_to_quat(spawn_yaw)
         for i, addr in enumerate(self.leg_qpos_addr):
             self.data.qpos[addr] = self.default_joint_pos[i]
         mujoco.mj_forward(self.model, self.data)
+
+    def _pose_supports_zero_height_ground(self, spawn_x, spawn_y, spawn_yaw):
+        self._set_pose_for_spawn_check(spawn_x, spawn_y, spawn_yaw)
+        if not self.foot_geom_ids:
+            return abs(self._terrain_height_at(spawn_x, spawn_y)) <= 1e-9
+        for geom_id in self.foot_geom_ids:
+            corners = self._foot_bottom_corners_world(geom_id)
+            center = self.data.geom_xpos[geom_id].copy()
+            samples = corners + [center]
+            for sample in samples:
+                if abs(self._terrain_height_at(sample[0], sample[1])) > 1e-9:
+                    return False
+        return True
+
+    def _terrain_height_at(self, x, y):
+        if self.terrain_meta is None:
+            return 0.0
+        half_x = self.terrain_meta["half_x"]
+        half_y = self.terrain_meta["half_y"]
+        nrow = self.terrain_meta["nrow"]
+        ncol = self.terrain_meta["ncol"]
+        terrain_data = self.terrain_meta["terrain_data"]
+        max_elev = self.terrain_meta["max_elev"]
+
+        x_norm = np.clip((x + half_x) / (2.0 * half_x), 0.0, 1.0)
+        y_norm = np.clip((y + half_y) / (2.0 * half_y), 0.0, 1.0)
+        col = min(ncol - 1, max(0, int(round(x_norm * (ncol - 1)))))
+        row = min(nrow - 1, max(0, int(round(y_norm * (nrow - 1)))))
+        return float(terrain_data[row, col] * max_elev)
+
+    def _foot_bottom_corners_world(self, geom_id):
+        size = self.model.geom_size[geom_id].copy()
+        xpos = self.data.geom_xpos[geom_id].copy()
+        xmat = self.data.geom_xmat[geom_id].reshape(3, 3)
+        corners = []
+        for sx in (-1.0, 1.0):
+            for sy in (-1.0, 1.0):
+                local = np.array([sx * size[0], sy * size[1], -size[2]], dtype=np.float64)
+                corners.append(xpos + xmat @ local)
+        return corners
+
+    def _compute_spawn_lift(self):
+        if self.terrain_meta is None or not self.foot_geom_ids:
+            return 0.0
+        max_penetration = 0.0
+        for geom_id in self.foot_geom_ids:
+            for corner in self._foot_bottom_corners_world(geom_id):
+                terrain_z = self._terrain_height_at(corner[0], corner[1])
+                max_penetration = max(max_penetration, terrain_z - corner[2])
+        return max(0.0, max_penetration + self.spawn_clearance_margin)
+
+    def _apply_spawn_pose(self):
+        import mujoco
+
+        spawn_x, spawn_y, spawn_yaw = self._sample_spawn_pose()
+        self.data.qpos[0] = spawn_x
+        self.data.qpos[1] = spawn_y
+        self.data.qpos[2] = self.nominal_base_height
+        self.data.qpos[3:7] = yaw_to_quat(spawn_yaw)
+        for i, addr in enumerate(self.leg_qpos_addr):
+            self.data.qpos[addr] = self.default_joint_pos[i]
+        mujoco.mj_forward(self.model, self.data)
+
+        lift = self._compute_spawn_lift()
+        if lift > 0.0:
+            self.data.qpos[2] += lift
+            mujoco.mj_forward(self.model, self.data)
+
+        spawn_kind = "random" if self.random_spawn else "fixed"
+        print(
+            f"[RESET] {spawn_kind} spawn x={self.data.qpos[0]:+.2f} y={self.data.qpos[1]:+.2f} "
+            f"yaw={spawn_yaw:+.2f} z={self.data.qpos[2]:.3f}"
+            + (f" lift={lift:.3f}" if self.terrain_meta is not None else "")
+        )
+
+    def _warmup_stand(self, num_cycles, history_reset):
+        import mujoco
+
         self.last_action = np.zeros(12)
+        self.last_torques = np.zeros(12)
         self.sim_time = 0.0
-        obs = self._build_obs_frame()
-        self.obs_buffer.reset(obs)
-        for _ in range(HISTORY_LENGTH):
+        if history_reset:
+            obs = self._build_obs_frame()
+            self.obs_buffer.reset(obs)
+        for _ in range(num_cycles):
             tgt = self.default_joint_pos
             for _ in range(DECIMATION):
                 cp = np.array([self.data.qpos[a] for a in self.leg_qpos_addr])
@@ -605,8 +871,16 @@ class MuJoCoDeploy:
                     self.data.ctrl[act_id] = torques[i]
                 mujoco.mj_step(self.model, self.data)
             self.sim_time += CONTROL_DT
-            obs = self._build_obs_frame()
-            self.obs_buffer.append(obs)
+            if history_reset:
+                obs = self._build_obs_frame()
+                self.obs_buffer.append(obs)
+
+    def reset(self):
+        import mujoco
+        self.vel_cmd[:] = self._initial_vel_cmd
+        mujoco.mj_resetData(self.model, self.data)
+        self._apply_spawn_pose()
+        self._warmup_stand(num_cycles=HISTORY_LENGTH, history_reset=True)
 
     def _get_pelvis_rot(self):
         quat = self.data.qpos[3:7].copy()
@@ -708,6 +982,14 @@ class MuJoCoDeploy:
                 mujoco.mj_step(self.model, self.data)
             self.sim_time += CONTROL_DT
 
+    def reset_manual(self):
+        """Reset robot pose for manual mode with randomized spawn and terrain-aware lift."""
+        import mujoco
+
+        mujoco.mj_resetData(self.model, self.data)
+        self._apply_spawn_pose()
+        self._warmup_stand(num_cycles=50, history_reset=False)
+
     def get_robot_state(self):
         pos = self.data.qpos[:3].copy()
         return {"x": pos[0], "y": pos[1], "z": pos[2], "time": self.sim_time}
@@ -740,31 +1022,28 @@ def main():
             manual_mode=args.manual,
             default_joint_pos=DEFAULT_JOINT_POS,
         )
+        kb_controller.set_control_file(args.control_file)
 
-    # Phase-aware terrain selection: --flat > --terrain > --phase
-    if args.flat:
-        terrain = None
-        if args.phase is not None:
-            print(f"[INFO] --flat forced: ignoring terrain from phase '{args.phase}'")
-    else:
-        terrain = args.terrain
-        if terrain is None and args.phase is not None:
-            terrain = PHASE_TERRAIN.get(args.phase)
-            if terrain is None:
-                print(f"[INFO] Phase '{args.phase}' -> flat ground (no terrain needed)")
-            else:
-                print(f"[INFO] Phase '{args.phase}' -> auto-selected terrain '{terrain}'")
-        elif terrain is not None and args.phase is not None:
-            print(f"[INFO] Phase '{args.phase}' overridden by explicit --terrain '{terrain}'")
-
+    # RTX artifact baseline selection: --flat > --terrain > --phase
+    terrain_profile = resolve_artifact_baseline(args.phase, args.terrain, args.flat)
     terrain_diff = args.terrain_difficulty if args.terrain_difficulty is not None else 1.0
-    if terrain == "p3" and args.terrain_difficulty is None:
-        print("[WARN] --terrain_difficulty not set; using full p3 height (1.0). "
-              "For the current p3_coarse run, ~0.625 is closer to the trained curriculum.")
-    env = MuJoCoDeploy(args.mjcf, policy, deploy_cfg=deploy_cfg, vel_cmd=vel_cmd, terrain=terrain,
-                        terrain_difficulty=terrain_diff)
+    if terrain_profile is not None:
+        profile = RTX_ARTIFACT_BASELINES[terrain_profile]
+        if profile["terrain_type"] is None:
+            print(f"[INFO] Using RTX artifact baseline '{terrain_profile}' -> flat ground")
+        else:
+            print(f"[INFO] Using RTX artifact baseline '{terrain_profile}' -> {profile['terrain_type']} terrain")
+            if args.terrain_difficulty is None:
+                print(f"[INFO] Base random_grid height max from RTX artifact: "
+                      f"{profile['random_grid_height_range'][1]:.2f}m")
+    elif args.flat:
+        print("[INFO] --flat forced: using flat ground")
+
+    env = MuJoCoDeploy(args.mjcf, policy, deploy_cfg=deploy_cfg, vel_cmd=vel_cmd,
+                        terrain_profile=terrain_profile, terrain_difficulty=terrain_diff,
+                        random_spawn=args.random_spawn)
     print(f"[INFO] MuJoCo model loaded from {args.mjcf}" +
-          (f" with terrain={terrain}" if terrain else " (flat ground)"))
+          (f" with artifact_baseline={terrain_profile}" if terrain_profile else " (flat ground)"))
     print(f"[INFO] Control frequency: {1.0/CONTROL_DT:.0f}Hz, Physics: {1.0/PHYSICS_DT:.0f}Hz")
     if not args.manual:
         print(f"[INFO] Observation: {OBS_DIM_TOTAL}d ({OBS_DIM_PER_FRAME}d x {HISTORY_LENGTH} frames)")
