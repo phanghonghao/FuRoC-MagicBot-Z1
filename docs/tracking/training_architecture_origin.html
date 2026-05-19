@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Z1 训练架构与 Origin 关系</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #fffdf8;
+      --ink: #1f2430;
+      --dim: #5d6678;
+      --line: #ddd3c4;
+      --accent: #0b6e4f;
+      --warn: #b15c00;
+      --bad: #a61b1b;
+      --soft: #edf7f2;
+      --soft-warn: #fff4e5;
+      --soft-bad: #fdecec;
+      --code: #f7f3eb;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #eee7d9 0%, var(--bg) 220px);
+      color: var(--ink);
+      line-height: 1.6;
+    }
+
+    .wrap {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 28px 22px 60px;
+    }
+
+    h1, h2, h3 { margin: 0 0 12px; line-height: 1.2; }
+    h1 { font-size: 34px; letter-spacing: -0.03em; }
+    h2 { font-size: 24px; margin-top: 28px; }
+    h3 { font-size: 18px; margin-top: 18px; }
+    p { margin: 0 0 12px; color: var(--dim); }
+
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(56, 46, 23, 0.06);
+    }
+
+    .hero {
+      padding: 26px 28px 22px;
+      margin-bottom: 20px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 14px 0 6px;
+    }
+
+    .chip {
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid var(--line);
+      background: #faf6ee;
+      color: var(--ink);
+    }
+
+    .chip.ok { background: var(--soft); color: var(--accent); border-color: #cbe5d9; }
+    .chip.warn { background: var(--soft-warn); color: var(--warn); border-color: #f0d7ab; }
+    .chip.bad { background: var(--soft-bad); color: var(--bad); border-color: #efc0c0; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px;
+    }
+
+    .card .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--dim);
+      margin-bottom: 8px;
+    }
+
+    .card .value {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .panel {
+      padding: 20px 22px;
+      margin-bottom: 18px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 12px 14px;
+      border-bottom: 1px solid #ece3d7;
+      font-size: 14px;
+    }
+
+    th {
+      background: #f6efe4;
+      color: #463e33;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    code {
+      background: var(--code);
+      border: 1px solid #eadfce;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      color: #6f2d00;
+    }
+
+    pre {
+      background: #282c34;
+      color: #abb2bf;
+      border-radius: 12px;
+      padding: 16px 18px;
+      font-size: 13px;
+      line-height: 1.5;
+      overflow-x: auto;
+      margin: 12px 0 0;
+    }
+
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: inherit;
+      font-size: inherit;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .tag.ok { background: var(--soft); color: var(--accent); }
+    .tag.warn { background: var(--soft-warn); color: var(--warn); }
+    .tag.bad { background: var(--soft-bad); color: var(--bad); }
+    .tag.neutral { background: #eee; color: #555; }
+    .tag.mine { background: #e8e0f0; color: #5b3a8c; }
+
+    .note {
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid #efd7ab;
+      background: var(--soft-warn);
+      color: #6c4c12;
+      margin-top: 12px;
+    }
+
+    .muted { color: var(--dim); }
+
+    .nn-diagram {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      padding: 28px 10px 20px;
+      margin: 16px 0 0;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow-x: auto;
+    }
+
+    .nn-layer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      min-width: 100px;
+    }
+
+    .nn-layer .layer-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--dim);
+      margin-bottom: 2px;
+    }
+
+    .nn-layer .layer-size {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 2px;
+    }
+
+    .nn-layer .layer-desc {
+      font-size: 11px;
+      color: var(--dim);
+      text-align: center;
+      max-width: 90px;
+    }
+
+    .nn-neurons {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      margin: 4px 0;
+    }
+
+    .nn-neuron {
+      width: 36px;
+      height: 12px;
+      border-radius: 6px;
+      background: var(--soft);
+      border: 1.5px solid var(--accent);
+    }
+
+    .nn-neuron.critic {
+      background: #e8e0f0;
+      border-color: #5b3a8c;
+    }
+
+    .nn-neuron.input { background: #e3edf7; border-color: #3a6ea5; }
+    .nn-neuron.output { background: var(--soft-warn); border-color: var(--warn); }
+    .nn-neuron.output-critic { background: #fde0e0; border-color: #a61b1b; }
+
+    .nn-arrow {
+      display: flex;
+      align-items: center;
+      font-size: 22px;
+      color: var(--dim);
+      padding: 0 4px;
+      min-width: 36px;
+      justify-content: center;
+    }
+
+    .nn-arrow .act {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--accent);
+      display: block;
+      text-align: center;
+      margin-top: -4px;
+    }
+
+    .nn-branch-label {
+      font-size: 12px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 6px;
+      display: inline-block;
+    }
+
+    .nn-actor-label { background: var(--soft); color: var(--accent); }
+    .nn-critic-label { background: #e8e0f0; color: #5b3a8c; }
+
+    .nn-split {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .nn-row {
+      display: flex;
+      align-items: center;
+      gap: 0;
+    }
+
+    .nn-shared-box {
+      border: 2px dashed var(--accent);
+      border-radius: 12px;
+      padding: 10px 14px 6px;
+      background: rgba(11,110,79,0.04);
+      position: relative;
+    }
+
+    .nn-shared-box .shared-label {
+      position: absolute;
+      top: -10px;
+      left: 12px;
+      background: var(--panel);
+      padding: 0 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .conclusion {
+      padding: 20px 22px;
+      border-radius: 14px;
+      border: 2px solid var(--accent);
+      background: var(--soft);
+      margin-top: 20px;
+    }
+
+    .conclusion h2 { color: var(--accent); margin-top: 0; }
+
+    .footer {
+      margin-top: 18px;
+      font-size: 13px;
+      color: var(--dim);
+    }
+
+    @media (max-width: 768px) {
+      .grid { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <section class="hero">
+      <h1>Z1 训练架构与 Origin 关系</h1>
+      <p>厘清 <code>MagiclabRobotics/magiclab_rl_lab</code>（origin）提供了什么、我们自己搭建了什么、网络结构和权重分别从何而来。</p>
+      <div class="chips">
+        <span class="chip ok">Origin: 提供网络架构 + 基础训练框架</span>
+        <span class="chip warn">z1-custom: 全部训练策略 + 自动化工具 + 所有权重</span>
+        <span class="chip bad">Origin 不提供任何预训练权重</span>
+      </div>
+    </section>
+
+    <!-- Q1: 权重 -->
+    <section class="panel">
+      <h2>1. 训练权重是否提供？</h2>
+      <p><strong style="color:var(--bad); font-size:18px;">Origin 不提供任何预训练权重。</strong></p>
+      <p>origin 仓库（<code>MagiclabRobotics/magiclab_rl_lab</code> 的 <code>feature/z1_12dof</code> 分支）中没有任何 <code>.pt</code> 文件。它只提供训练代码框架，需要用户自己训练生成模型。</p>
+      <p>我们仓库中 <code>models/p/</code> 下的全部 21 个模型文件均为自行训练产出：</p>
+      <table>
+        <thead>
+          <tr><th>来源</th><th>.pt 文件数</th><th>存储</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Origin</strong></td>
+            <td style="color:var(--bad); font-weight:700;">0</td>
+            <td>—</td>
+            <td>只给代码，不给模型</td>
+          </tr>
+          <tr>
+            <td><strong>我们 (z1-custom)</strong></td>
+            <td style="color:var(--accent); font-weight:700;">21</td>
+            <td>~187 MB (LFS)</td>
+            <td>12 个 Full Checkpoint + 9 个 JIT Policy</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Q2: rsl_rl framework -->
+    <section class="panel">
+      <h2>2. rsl_rl 的内框架和 Weights</h2>
+      <p><strong>提供框架，不提供 weights。</strong> Origin 仓库包含完整的 rsl-rl 训练基础设施：</p>
+      <table>
+        <thead>
+          <tr><th>文件</th><th>作用</th><th>提供方</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>scripts/rsl_rl/train.py</code></td>
+            <td>训练入口脚本</td>
+            <td><span class="tag ok">Origin</span></td>
+          </tr>
+          <tr>
+            <td><code>scripts/rsl_rl/play.py</code></td>
+            <td>基础播放脚本</td>
+            <td><span class="tag ok">Origin</span></td>
+          </tr>
+          <tr>
+            <td><code>agents/rsl_rl_ppo_cfg.py</code></td>
+            <td>PPO 超参配置（含网络结构定义）</td>
+            <td><span class="tag ok">Origin</span></td>
+          </tr>
+          <tr>
+            <td><code>velocity_env_cfg.py</code></td>
+            <td>环境配置（地形、奖励、观测）</td>
+            <td><span class="tag ok">Origin</span> 基础版 → <span class="tag mine">我们大幅改造</span></td>
+          </tr>
+          <tr>
+            <td><code>mdp/rewards.py</code></td>
+            <td>奖励函数定义</td>
+            <td><span class="tag ok">Origin</span> 基础版 → <span class="tag mine">我们新增多项奖励</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <p>实际的 rsl-rl 算法库本身（<code>rsl_rl</code> Python 包）是独立安装的第三方库（我们用 3.0.1），不在 origin 仓库内。</p>
+    </section>
+
+    <!-- Q3: 网络结构 -->
+    <section class="panel">
+      <h2>3. 决策神经网络框架 — 三层 MLP（Origin 提供）</h2>
+      <p><strong style="color:var(--accent); font-size:18px;">Origin 官方定义了 Actor-Critic 网络结构，三层 MLP。</strong></p>
+      <p>位于 <code>agents/rsl_rl_ppo_cfg.py</code>，我们沿用至今未修改：</p>
+      <pre><code>policy = RslRlPpoActorCriticCfg(
+    init_noise_std=1.0,
+    actor_hidden_dims=[512, 256, 128],    # Actor:  三层 MLP
+    critic_hidden_dims=[512, 256, 128],    # Critic: 三层 MLP
+    activation="elu",
+)</code></pre>
+
+      <!-- SVG Network Diagram -->
+      <div style="background:#fff; border:1px solid var(--line); border-radius:14px; padding:24px 12px 16px; margin:16px 0 0; overflow-x:auto;">
+        <svg viewBox="0 0 900 320" width="100%" style="max-width:900px; margin:0 auto; display:block;">
+          <defs>
+            <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+              <polygon points="0 0, 8 3, 0 6" fill="#8a9ab5"/>
+            </marker>
+            <linearGradient id="gActor" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#0b6e4f" stop-opacity="0.15"/>
+              <stop offset="100%" stop-color="#0b6e4f" stop-opacity="0.05"/>
+            </linearGradient>
+            <linearGradient id="gCritic" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#5b3a8c" stop-opacity="0.15"/>
+              <stop offset="100%" stop-color="#5b3a8c" stop-opacity="0.05"/>
+            </linearGradient>
+          </defs>
+
+          <!-- Shared layers background -->
+          <rect x="195" y="60" width="340" height="200" rx="14" fill="none" stroke="#0b6e4f" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.5"/>
+          <text x="205" y="54" font-size="11" font-weight="700" fill="#0b6e4f" font-family="Segoe UI, sans-serif">Shared Hidden Layers</text>
+
+          <!-- Input Layer -->
+          <rect x="40" y="100" width="100" height="120" rx="10" fill="#e3edf7" stroke="#3a6ea5" stroke-width="1.5"/>
+          <text x="90" y="80" text-anchor="middle" font-size="11" font-weight="700" fill="#3a6ea5" font-family="Segoe UI, sans-serif">INPUT</text>
+          <text x="90" y="152" text-anchor="middle" font-size="14" font-weight="700" fill="#1f2430" font-family="Segoe UI, sans-serif">obs</text>
+          <text x="90" y="170" text-anchor="middle" font-size="10" fill="#5d6678" font-family="Segoe UI, sans-serif">~48 dim</text>
+          <text x="90" y="184" text-anchor="middle" font-size="9" fill="#5d6678" font-family="Segoe UI, sans-serif">joint pos/vel</text>
+          <text x="90" y="196" text-anchor="middle" font-size="9" fill="#5d6678" font-family="Segoe UI, sans-serif">base vel, last act</text>
+          <text x="90" y="208" text-anchor="middle" font-size="9" fill="#5d6678" font-family="Segoe UI, sans-serif">height scanner</text>
+
+          <!-- Arrow: Input → Layer 1 -->
+          <line x1="140" y1="160" x2="200" y2="160" stroke="#8a9ab5" stroke-width="1.5" marker-end="url(#arr)"/>
+
+          <!-- Hidden Layer 1 -->
+          <rect x="210" y="90" width="80" height="140" rx="10" fill="url(#gActor)" stroke="#0b6e4f" stroke-width="1.5"/>
+          <text x="250" y="78" text-anchor="middle" font-size="11" font-weight="700" fill="#0b6e4f" font-family="Segoe UI, sans-serif">HIDDEN 1</text>
+          <text x="250" y="155" text-anchor="middle" font-size="18" font-weight="700" fill="#1f2430" font-family="Segoe UI, sans-serif">512</text>
+          <text x="250" y="175" text-anchor="middle" font-size="10" fill="#5d6678" font-family="Segoe UI, sans-serif">ELU</text>
+
+          <!-- Arrow: Layer 1 → Layer 2 -->
+          <line x1="290" y1="160" x2="320" y2="160" stroke="#8a9ab5" stroke-width="1.5" marker-end="url(#arr)"/>
+          <text x="305" y="148" text-anchor="middle" font-size="9" font-weight="600" fill="#0b6e4f" font-family="Segoe UI, sans-serif">ELU</text>
+
+          <!-- Hidden Layer 2 -->
+          <rect x="330" y="110" width="80" height="100" rx="10" fill="url(#gActor)" stroke="#0b6e4f" stroke-width="1.5"/>
+          <text x="370" y="98" text-anchor="middle" font-size="11" font-weight="700" fill="#0b6e4f" font-family="Segoe UI, sans-serif">HIDDEN 2</text>
+          <text x="370" y="155" text-anchor="middle" font-size="18" font-weight="700" fill="#1f2430" font-family="Segoe UI, sans-serif">256</text>
+          <text x="370" y="175" text-anchor="middle" font-size="10" fill="#5d6678" font-family="Segoe UI, sans-serif">ELU</text>
+
+          <!-- Arrow: Layer 2 → Layer 3 -->
+          <line x1="410" y1="160" x2="440" y2="160" stroke="#8a9ab5" stroke-width="1.5" marker-end="url(#arr)"/>
+          <text x="425" y="148" text-anchor="middle" font-size="9" font-weight="600" fill="#0b6e4f" font-family="Segoe UI, sans-serif">ELU</text>
+
+          <!-- Hidden Layer 3 -->
+          <rect x="450" y="120" width="80" height="80" rx="10" fill="url(#gActor)" stroke="#0b6e4f" stroke-width="1.5"/>
+          <text x="490" y="108" text-anchor="middle" font-size="11" font-weight="700" fill="#0b6e4f" font-family="Segoe UI, sans-serif">HIDDEN 3</text>
+          <text x="490" y="158" text-anchor="middle" font-size="18" font-weight="700" fill="#1f2430" font-family="Segoe UI, sans-serif">128</text>
+          <text x="490" y="178" text-anchor="middle" font-size="10" fill="#5d6678" font-family="Segoe UI, sans-serif">ELU</text>
+
+          <!-- Split point -->
+          <line x1="530" y1="160" x2="560" y2="160" stroke="#8a9ab5" stroke-width="1.5"/>
+          <!-- Actor branch down -->
+          <path d="M560,160 L560,220 L590,220" stroke="#0b6e4f" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+          <!-- Critic branch up -->
+          <path d="M560,160 L560,100 L590,100" stroke="#5b3a8c" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+
+          <!-- Actor Output -->
+          <rect x="600" y="190" width="120" height="60" rx="10" fill="#edf7f2" stroke="#0b6e4f" stroke-width="2"/>
+          <text x="660" y="178" text-anchor="middle" font-size="12" font-weight="700" fill="#0b6e4f" font-family="Segoe UI, sans-serif">ACTOR</text>
+          <text x="660" y="215" text-anchor="middle" font-size="18" font-weight="700" fill="#1f2430" font-family="Segoe UI, sans-serif">12</text>
+          <text x="660" y="233" text-anchor="middle" font-size="10" fill="#5d6678" font-family="Segoe UI, sans-serif">tanh → joint pos</text>
+
+          <!-- Critic Output -->
+          <rect x="600" y="70" width="120" height="60" rx="10" fill="#ede0f5" stroke="#5b3a8c" stroke-width="2"/>
+          <text x="660" y="58" text-anchor="middle" font-size="12" font-weight="700" fill="#5b3a8c" font-family="Segoe UI, sans-serif">CRITIC</text>
+          <text x="660" y="98" text-anchor="middle" font-size="18" font-weight="700" fill="#1f2430" font-family="Segoe UI, sans-serif">1</text>
+          <text x="660" y="116" text-anchor="middle" font-size="10" fill="#5d6678" font-family="Segoe UI, sans-serif">state value V(s)</text>
+
+          <!-- Arrow labels -->
+          <text x="735" y="100" font-size="10" fill="#5b3a8c" font-family="Segoe UI, sans-serif" font-weight="600">→ PPO loss</text>
+          <text x="735" y="220" font-size="10" fill="#0b6e4f" font-family="Segoe UI, sans-serif" font-weight="600">→ action output</text>
+
+          <!-- Legend -->
+          <rect x="40" y="275" width="820" height="35" rx="8" fill="#faf6ee" stroke="var(--line)" stroke-width="1"/>
+          <text x="60" y="297" font-size="11" fill="#1f2430" font-family="Segoe UI, sans-serif" font-weight="600">PPO Algorithm:</text>
+          <text x="165" y="297" font-size="11" fill="#5d6678" font-family="Segoe UI, sans-serif">rsl-rl 3.0.1 | clip=0.2 | γ=0.99 | λ=0.95 | lr=1e-3 | entropy=0.01 | mini-batch=4 | epochs=5</text>
+        </svg>
+      </div>
+
+      <p style="margin-top:14px;">这个三层结构是 <strong>Isaac Lab + rsl-rl</strong> 的标准配置，由 <code>RslRlPpoActorCriticCfg</code> 类（<code>isaaclab_rl</code> 包）实现，origin 直接引用。Actor 和 Critic 共享三层隐藏层结构（512→256→128），在最后一层分叉——Actor 输出 12 维关节位置目标（tanh 激活），Critic 输出 1 维 state-value 估计。</p>
+    </section>
+
+    <!-- Q4: What's ours -->
+    <section class="panel">
+      <h2>4. 我们的训练 vs Origin：半官方半自建</h2>
+      <p>Origin 提供了<strong>骨架</strong>（网络结构 + 基础训练流程），实际的<strong>训练策略设计</strong>和<strong>所有自动化工具</strong>均为自行搭建。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>组成部分</th>
+            <th>Origin 提供</th>
+            <th>我们自建 (z1-custom)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>网络架构</strong>（三层 MLP 512-256-128）</td>
+            <td><span class="tag ok">提供</span></td>
+            <td>原样沿用，未修改</td>
+          </tr>
+          <tr>
+            <td><strong>PPO 超参</strong></td>
+            <td><span class="tag ok">提供</span></td>
+            <td>沿用基础配置，pipeline 中动态调 LR、entropy coef</td>
+          </tr>
+          <tr>
+            <td><strong>环境配置</strong>（地形、观测、终止条件）</td>
+            <td><span class="tag ok">基础版</span></td>
+            <td><span class="tag mine">大幅改造</span>：5 级地形 curriculum、新增观测项、termination 调优</td>
+          </tr>
+          <tr>
+            <td><strong>奖励函数</strong></td>
+            <td><span class="tag ok">基础版</span></td>
+            <td><span class="tag mine">大幅改造</span>：新增 joint_mirror、feet_clearance、joint_deviation_legs 等</td>
+          </tr>
+          <tr>
+            <td><strong>训练脚本</strong></td>
+            <td><span class="tag ok">train.py</span></td>
+            <td><span class="tag mine">新增</span> train_multigpu.py（4 GPU 分布式训练）</td>
+          </tr>
+          <tr>
+            <td><strong>Pipeline 自动化</strong></td>
+            <td><span class="tag bad">不提供</span></td>
+            <td><span class="tag mine">全部自建</span>：phase_orchestrator、embedded_monitor、config_generator、ppo_override、state_store</td>
+          </tr>
+          <tr>
+            <td><strong>5-Phase 训练计划</strong></td>
+            <td><span class="tag bad">不提供</span></td>
+            <td><span class="tag mine">全部自建</span>：z1_5phase_plan.yaml（P1 Bootstrap → P5 Full Terrain）</td>
+          </tr>
+          <tr>
+            <td><strong>Sim2Sim / MuJoCo</strong></td>
+            <td><span class="tag bad">不提供</span></td>
+            <td><span class="tag mine">全部自建</span>：mujoco_sim2sim.py、mujoco_manual.py</td>
+          </tr>
+          <tr>
+            <td><strong>视频录制 / 导出</strong></td>
+            <td><span class="tag ok">基础 play.py</span></td>
+            <td><span class="tag mine">新增</span> play_z1_video.py、export_jit.py、一键录制脚本</td>
+          </tr>
+          <tr>
+            <td><strong>训练监控 / 分析</strong></td>
+            <td><span class="tag bad">不提供</span></td>
+            <td><span class="tag mine">全部自建</span>：train_monitor.py、train_analyzer.py、bestmodel_phase_sync.py</td>
+          </tr>
+          <tr>
+            <td><strong>部署工具</strong></td>
+            <td><span class="tag bad">不提供</span></td>
+            <td><span class="tag mine">全部自建</span>：robot_deploy.py</td>
+          </tr>
+          <tr>
+            <td><strong>训练权重</strong></td>
+            <td><span class="tag bad">不提供</span></td>
+            <td><span class="tag mine">全部自行训练</span>：21 个 .pt 文件，覆盖 P1–P4</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Summary -->
+    <section class="conclusion">
+      <h2>总结</h2>
+      <table>
+        <tbody>
+          <tr>
+            <td style="font-weight:700; width:200px;">网络结构从哪来？</td>
+            <td><strong>Origin 官方提供</strong>，三层 MLP (512→256→128)，Actor-Critic 架构，ELU 激活。定义在 <code>rsl_rl_ppo_cfg.py</code>。</td>
+          </tr>
+          <tr>
+            <td style="font-weight:700;">训练权重从哪来？</td>
+            <td><strong>全部自己训练</strong>。Origin 不提供任何 .pt 文件。</td>
+          </tr>
+          <tr>
+            <td style="font-weight:700;">训练框架从哪来？</td>
+            <td><strong>Origin 提供基础骨架</strong>（train.py、env_cfg、rewards）。<strong>我们自建了全部自动化层</strong>（orchestrator、monitor、5-phase plan、sim2sim）。</td>
+          </tr>
+          <tr>
+            <td style="font-weight:700;">别人 clone 后能复现吗？</td>
+            <td><strong>能。</strong>Clone 父仓库 → <code>git submodule update --init</code> → 获得 z1-custom 分支（含所有自建工具）+ LFS 下载权重 → 即可播放/推理。不需要 origin 的原始分支。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer class="footer">
+      <p>Generated: 2026-05-19 | Source: <code>origin/feature/z1_12dof</code> vs <code>fork/z1-custom</code> comparison</p>
+    </footer>
+  </div>
+</body>
+</html>
