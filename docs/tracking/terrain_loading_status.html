@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Z1 Current Terrain Loading Status</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #fffdf8;
+      --ink: #1f2430;
+      --dim: #5d6678;
+      --line: #ddd3c4;
+      --accent: #0b6e4f;
+      --warn: #b15c00;
+      --bad: #a61b1b;
+      --soft: #edf7f2;
+      --soft-warn: #fff4e5;
+      --soft-bad: #fdecec;
+      --code: #f7f3eb;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #eee7d9 0%, var(--bg) 220px);
+      color: var(--ink);
+      line-height: 1.6;
+    }
+
+    .wrap {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 28px 22px 60px;
+    }
+
+    h1, h2, h3 { margin: 0 0 12px; line-height: 1.2; }
+    h1 { font-size: 34px; letter-spacing: -0.03em; }
+    h2 { font-size: 24px; margin-top: 28px; }
+    h3 { font-size: 18px; margin-top: 18px; }
+    p { margin: 0 0 12px; color: var(--dim); }
+
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(56, 46, 23, 0.06);
+    }
+
+    .hero {
+      padding: 26px 28px 22px;
+      margin-bottom: 20px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 14px 0 6px;
+    }
+
+    .chip {
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid var(--line);
+      background: #faf6ee;
+      color: var(--ink);
+    }
+
+    .chip.ok { background: var(--soft); color: var(--accent); border-color: #cbe5d9; }
+    .chip.warn { background: var(--soft-warn); color: var(--warn); border-color: #f0d7ab; }
+    .chip.bad { background: var(--soft-bad); color: var(--bad); border-color: #efc0c0; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px;
+    }
+
+    .card .label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--dim);
+      margin-bottom: 8px;
+    }
+
+    .card .value {
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .panel {
+      padding: 20px 22px;
+      margin-bottom: 18px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 12px 12px;
+      border-bottom: 1px solid #ece3d7;
+      font-size: 14px;
+    }
+
+    th {
+      background: #f6efe4;
+      color: #463e33;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    code {
+      background: var(--code);
+      border: 1px solid #eadfce;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      color: #6f2d00;
+    }
+
+    ul {
+      margin: 8px 0 0 18px;
+      padding: 0;
+      color: var(--dim);
+    }
+
+    li { margin-bottom: 6px; }
+
+    .note {
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid #efd7ab;
+      background: var(--soft-warn);
+      color: #6c4c12;
+      margin-top: 12px;
+    }
+
+    .danger {
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid #efc0c0;
+      background: var(--soft-bad);
+      color: #7d1d1d;
+      margin-top: 12px;
+    }
+
+    .muted { color: var(--dim); }
+
+    .footer {
+      margin-top: 18px;
+      font-size: 13px;
+      color: var(--dim);
+    }
+
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>Z1 当前地形加载状态</h1>
+      <p>基于当前有效模型跟踪文件 <code>docs/tracking/bestmodel_phase.json</code>、训练计划 <code>training_plans/z1_5phase_plan.yaml</code>、以及本地 MuJoCo 脚本 <code>sim2sim/mujoco_manual.py</code> 汇总。</p>
+      <div class="chips">
+        <span class="chip ok">当前有效 best model: p1_fine / p2_fine / p3_fine</span>
+        <span class="chip warn">p4 / p5 仅在训练计划中，尚无最新 best model</span>
+        <span class="chip bad">p3b 已从跟踪文件归档，但 MuJoCo 代码仍残留 legacy 映射</span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <div class="label">Tracking Source</div>
+        <div class="value">bestmodel_phase.json</div>
+        <div class="muted">更新时间 2026-05-16 23:00 +08:00。当前 phase_best 分别是 p1_fine、p2_fine、p3_fine。</div>
+      </div>
+      <div class="card">
+        <div class="label">Isaac Lab Current Plan</div>
+        <div class="value">P1/P2 Flat, P3 Gentle</div>
+        <div class="muted">P1/P2 使用 plane；P3 使用 generator: 70% flat + 30% random_grid。P3 fine 将 random_grid difficulty 上限从 0.25 提到 0.35。</div>
+      </div>
+      <div class="card">
+        <div class="label">MuJoCo Current Code</div>
+        <div class="value">Flat + P3 + Legacy P3b</div>
+        <div class="muted">代码仍支持 <code>p3b</code>，并把 <code>p4</code> 映射到旧的 <code>p3b</code> 近似地形；<code>p5</code> 没有专门映射。</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>1. 当前有效 phase / best model 视角</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Phase</th>
+            <th>Tracking 状态</th>
+            <th>当前 best model</th>
+            <th>Isaac Lab 实际训练地形</th>
+            <th>MuJoCo 当前会加载什么</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>p1</strong></td>
+            <td>COMPLETE</td>
+            <td><code>p1_fine/model_2800.pt</code></td>
+            <td>100% 平地，<code>terrain_type=plane</code></td>
+            <td><code>--phase p1</code> -> flat ground</td>
+          </tr>
+          <tr>
+            <td><strong>p2</strong></td>
+            <td>COMPLETE</td>
+            <td><code>p2_fine/model_4800.pt</code></td>
+            <td>100% 平地，<code>terrain_type=plane</code></td>
+            <td><code>--phase p2</code> -> flat ground</td>
+          </tr>
+          <tr>
+            <td><strong>p3</strong></td>
+            <td>COMPLETE</td>
+            <td><code>p3_fine/model_5500.pt</code></td>
+            <td>Gentle terrain，<code>70% flat + 30% random_grid</code></td>
+            <td><code>--phase p3</code> -> MuJoCo <code>p3</code> gentle hfield</td>
+          </tr>
+          <tr>
+            <td><strong>p4</strong></td>
+            <td>PLANNED</td>
+            <td>暂无</td>
+            <td>Rough terrain，训练计划已定义</td>
+            <td>当前代码仍是 <code>--phase p4</code> -> legacy <code>p3b</code></td>
+          </tr>
+          <tr>
+            <td><strong>p5</strong></td>
+            <td>PLANNED</td>
+            <td>暂无</td>
+            <td>Full terrain，训练计划已定义</td>
+            <td>当前 <code>PHASE_TERRAIN</code> 没有 <code>p5</code> 项，默认会退回 flat</td>
+          </tr>
+          <tr>
+            <td><strong>p3b</strong></td>
+            <td>ARCHIVED</td>
+            <td>已废弃</td>
+            <td>不再是当前 pipeline phase</td>
+            <td>MuJoCo 代码中仍保留 legacy terrain 生成路径</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="danger">
+        结论：以当前跟踪文件为准，活跃 phase 只有 p1/p2/p3。MuJoCo 端的 phase 映射还没有完全追上当前训练计划，尤其是 p4/p5。
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>2. Isaac Lab 当前加载的地形高度与分布</h2>
+      <p>这里列的是当前训练计划 <code>z1_5phase_plan.yaml</code> 中定义的 terrain 配置，也就是 Isaac Lab 训练时真正使用的分布。重点看当前有效模型对应的 p1、p2、p3。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Phase / Sub-phase</th>
+            <th>terrain_type</th>
+            <th>分布</th>
+            <th>高度 / 几何参数</th>
+            <th>来源说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>p1_coarse / p1_fine</strong></td>
+            <td><code>plane</code></td>
+            <td>100% flat</td>
+            <td>无 heightmap；平地</td>
+            <td><code>terrain_generator: null</code></td>
+          </tr>
+          <tr>
+            <td><strong>p2_coarse / p2_fine</strong></td>
+            <td><code>plane</code></td>
+            <td>100% flat</td>
+            <td>无 heightmap；平地</td>
+            <td><code>terrain_generator: null</code></td>
+          </tr>
+          <tr>
+            <td><strong>p3_coarse</strong></td>
+            <td><code>generator</code></td>
+            <td><code>flat 70% + random_grid 30%</code></td>
+            <td><code>random_grid difficulty_range=[0.0, 0.25]</code></td>
+            <td>基础 gentle terrain</td>
+          </tr>
+          <tr>
+            <td><strong>p3_fine</strong></td>
+            <td><code>generator</code></td>
+            <td><code>flat 70% + random_grid 30%</code></td>
+            <td><code>random_grid difficulty_range=[0.0, 0.35]</code></td>
+            <td>在 p3 基础上抬高 random_grid 上限</td>
+          </tr>
+          <tr>
+            <td><strong>p4_coarse</strong></td>
+            <td><code>generator</code></td>
+            <td><code>flat 30% + random_grid 30% + stairs 20% + gap 10% + boxes 10%</code></td>
+            <td><code>difficulty_range=[0.0, 0.8]</code></td>
+            <td>rough terrain，当前仅计划态</td>
+          </tr>
+          <tr>
+            <td><strong>p4_fine</strong></td>
+            <td><code>generator</code></td>
+            <td><code>flat 30% + random_grid 30% + stairs 20% + gap 10% + boxes 10%</code></td>
+            <td><code>difficulty_range=[0.0, 1.0]</code></td>
+            <td>在 p4_coarse 上放开高度 / 难度上限</td>
+          </tr>
+          <tr>
+            <td><strong>p5_coarse / p5_fine</strong></td>
+            <td><code>generator</code></td>
+            <td><code>flat 20% + random_grid 20% + stairs 20% + gap 20% + boxes 20%</code></td>
+            <td>phase 级别 <code>difficulty_range=[0.0, 1.0]</code></td>
+            <td>full terrain，当前仅计划态</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Isaac Lab 参数如何落成实际 terrain 类</h3>
+      <ul>
+        <li><code>training_plans/z1_5phase_plan.yaml</code> 提供 <code>terrain_type</code> 与 <code>terrain_generator</code>。</li>
+        <li><code>magiclab_rl_lab/scripts/automation/config_generator.py</code> 会把这些 plan 参数翻译成 Isaac Lab 的 <code>TerrainGeneratorCfg</code>。</li>
+        <li><code>RandomGridTerrainCfg</code> 会被写成 <code>grid_height_range=(low, high)</code>。</li>
+        <li><code>StairsTerrainCfg</code> 会被写成 <code>step_height_range=(0.05, d_max*0.25)</code>。</li>
+        <li><code>GapTerrainCfg</code> 会被写成 <code>gap_width_range=(0.1, d_max*0.5)</code>。</li>
+        <li><code>BoxesTerrainCfg</code> 会被写成 <code>box_height_range=(0.05, d_max*0.3)</code>。</li>
+      </ul>
+      <div class="note">
+        也就是说，Isaac Lab 那边地形“怎么长出来”由训练计划决定，最终不是看 <code>deploy.yaml</code>，而是看 <code>training_plans/z1_5phase_plan.yaml</code> 经过 <code>config_generator.py</code> 生成后的 env cfg。
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>3. MuJoCo 当前加载的地形高度与分布</h2>
+      <p>这里列的是 <code>sim2sim/mujoco_manual.py</code> 当前真正实现的逻辑，不是“计划中应该有”的逻辑。MuJoCo 不从 <code>deploy.yaml</code> 读取 terrain，而是根据 <code>--phase</code> / <code>--terrain</code> 在 Python 里现生成 hfield。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>命令入口</th>
+            <th>实际 terrain</th>
+            <th>分布</th>
+            <th>高度定义</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>--phase p1</code></td>
+            <td>flat</td>
+            <td>100% flat</td>
+            <td>无 hfield</td>
+            <td>与 Isaac p1 一致</td>
+          </tr>
+          <tr>
+            <td><code>--phase p2</code></td>
+            <td>flat</td>
+            <td>100% flat</td>
+            <td>无 hfield</td>
+            <td>与 Isaac p2 一致</td>
+          </tr>
+          <tr>
+            <td><code>--phase p3</code></td>
+            <td><code>p3</code></td>
+            <td>代码切片是约 <code>flat 66.7% + random_grid 33.3%</code></td>
+            <td><code>MAX_ELEV=0.4m</code>，再乘 <code>terrain_difficulty</code></td>
+            <td>注释写 70/30，但实际 section 切法更接近 2/3 + 1/3</td>
+          </tr>
+          <tr>
+            <td><code>--phase p4</code></td>
+            <td>legacy <code>p3b</code></td>
+            <td>约 <code>flat 33.3% + random_grid 33.3% + stairs 16.7% + boxes 16.7%</code></td>
+            <td><code>MAX_ELEV=0.6m</code>，再乘 <code>terrain_difficulty</code></td>
+            <td>没有 gap；与当前 Isaac p4 不一致</td>
+          </tr>
+          <tr>
+            <td><code>--phase p5</code></td>
+            <td>flat</td>
+            <td>100% flat</td>
+            <td>无专门映射</td>
+            <td>因为 <code>PHASE_TERRAIN</code> 里没有 p5</td>
+          </tr>
+          <tr>
+            <td><code>--terrain p3</code></td>
+            <td><code>p3</code></td>
+            <td>同上</td>
+            <td><code>random_grid</code> 高度大致 <code>0.0~0.4m</code></td>
+            <td>显式 terrain 优先于 phase</td>
+          </tr>
+          <tr>
+            <td><code>--terrain p3b</code></td>
+            <td>legacy <code>p3b</code></td>
+            <td>同上</td>
+            <td><code>stairs</code> 约 <code>0.05~0.23m</code>，<code>boxes</code> 约 <code>0.0~0.4m</code></td>
+            <td>旧代码路径仍保留</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="danger">
+        关键不一致：当前 MuJoCo 没有实现与训练计划中 p4/p5 对应的 rough/full terrain 分布，也没有 gap。它目前只有 flat、gentle p3、以及 legacy p3b 近似地形。
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>4. 当前最重要的结论</h2>
+      <ul>
+        <li>如果你现在按 <code>bestmodel_phase.json</code> 走，活跃模型只有 <code>p1_fine</code>、<code>p2_fine</code>、<code>p3_fine</code>。</li>
+        <li><code>p3b</code> 已经是归档 phase，不应再作为“当前模型体系”的一部分。</li>
+        <li>Isaac Lab 当前 gentle terrain 是 <code>p3: 70% flat + 30% random_grid</code>，p3_fine 把 random_grid 上限提到 <code>0.35</code>。</li>
+        <li>MuJoCo 当前代码仍残留旧的 <code>p3b</code> 逻辑，并把 <code>p4</code> 错映射到它；<code>p5</code> 还没有接入。</li>
+        <li>因此，当前 HTML 能回答“现在实际加载的是什么”，同时也明确暴露出 MuJoCo 端和当前训练计划之间的缺口。</li>
+      </ul>
+    </section>
+
+    <div class="footer">
+      Source files: <code>docs/tracking/bestmodel_phase.json</code>, <code>training_plans/z1_5phase_plan.yaml</code>, <code>sim2sim/mujoco_manual.py</code>, <code>magiclab_rl_lab/scripts/automation/config_generator.py</code>.
+    </div>
+  </div>
+</body>
+</html>

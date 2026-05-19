@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Z1 常用终端指令速查</title>
+  <style>
+:root {
+  --bg: #f7f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #5b6472;
+  --line: #d8dee9;
+  --code-bg: #f3f4f6;
+  --link: #0f5cc0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: linear-gradient(180deg, #f9fafc 0%, #f1f4f9 100%);
+  color: var(--text);
+  line-height: 1.7;
+}
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 40px 48px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+}
+h1, h2, h3 { line-height: 1.3; color: #111827; }
+h1 { font-size: 2rem; margin-top: 0; }
+h2 { margin-top: 2rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+p, li { font-size: 1rem; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.15rem 0.35rem;
+}
+pre {
+  background: #111827;
+  color: #f9fafb;
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  border-left: 4px solid #8fb4e8;
+  background: #f6f9ff;
+  color: var(--muted);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.5rem;
+  font-size: 0.96rem;
+}
+th, td {
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+}
+th { background: #eef3fb; }
+footer {
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Z1 常用终端指令速查</h1>
+    <blockquote>
+      <p><code>local_play</code> 指本地 Windows / MuJoCo，不是 RTX 远端。下面都是可以直接复制执行的命令。</p>
+    </blockquote>
+
+    <h2>1. 本地 local_play / MuJoCo</h2>
+    <pre><code class="language-powershell">cd D:\Desktop_Files\GPU-Train\RTX6000\Magicbot_Z1
+
+# 启动 GUI
+python .\scripts\local_play_gui.py
+
+# 本地交互回放：对应 local_play
+python sim2sim\mujoco_manual.py --mjcf magicbot-z1_description\mjcf\MAGICBOTZ1.xml --policy models\p\p2_fine\p2_fine_policy.pt --deploy_cfg videos\p\p2_fine\params\deploy.yaml --keyboard --num_steps 10000
+
+# p2_coarse 记录 CSV
+python sim2sim\mujoco_manual.py --mjcf magicbot-z1_description\mjcf\MAGICBOTZ1.xml --policy models\p\p2_coarse\p2_coarse_policy.pt --deploy_cfg videos\p\p2_coarse\params\deploy.yaml --phase p2 --csv
+
+# p2_coarse CSV 分析
+python scripts\analyze_csv.py logs\p\p2_coarse\20260515_014555\p2_coarse.csv</code></pre>
+
+    <h2>2. 远端 RTX 查询</h2>
+    <pre><code class="language-bash">/gpu-train --status
+/gpu-train --tail
+/gpu-train --gpu
+/gpu-train --idle
+/gpu-train --mycuda
+/gpu-train --slurm</code></pre>
+
+    <h2>3. Orchestrator</h2>
+    <pre><code class="language-bash">/gpu-train --orchestrator --start
+/gpu-train --orchestrator --start --from p3_fine
+/gpu-train --orchestrator --resume</code></pre>
+
+    <h2>4. Windows 本地提交远端 RTX</h2>
+    <pre><code class="language-powershell">&amp; 'C:\Program Files\Git\bin\bash.exe' 'D:\Desktop_Files\GPU-Train\RTX6000\rtx_submit_orchestrator_train.sh' --resume
+&amp; 'C:\Program Files\Git\bin\bash.exe' 'D:\Desktop_Files\GPU-Train\RTX6000\rtx_submit_resume_train.sh' --phase p3_fine --load-run 2026-05-16_12-13-26_p3_fine --checkpoint model_5500.pt --gpus 4 --num-envs 4096 --max-iterations 15000 --master-port 29522 --no-hold</code></pre>
+
+    <h2>5. 本地提示</h2>
+    <pre><code class="language-bash">/gpu-train --sim</code></pre>
+
+    <footer>Standalone quick reference for common terminal commands.</footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RTX vs Local Config Comparison</title>
+  <style>
+    :root {
+      --bg: #f5f1e8;
+      --panel: #fffdfa;
+      --ink: #1f2430;
+      --dim: #5f6778;
+      --line: #ddd4c7;
+      --ok-bg: #edf8f1;
+      --ok-fg: #0f6a43;
+      --warn-bg: #fff5e8;
+      --warn-fg: #9a5a00;
+      --bad-bg: #fdecec;
+      --bad-fg: #9f2020;
+      --code: #f7f2ea;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #ece5d5 0, var(--bg) 220px);
+      color: var(--ink);
+      line-height: 1.6;
+    }
+
+    .wrap {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 28px 22px 56px;
+    }
+
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 10px 28px rgba(58, 45, 17, 0.06);
+    }
+
+    .hero {
+      padding: 26px 28px 20px;
+      margin-bottom: 18px;
+    }
+
+    .panel {
+      padding: 20px 22px;
+      margin-bottom: 18px;
+    }
+
+    h1, h2, h3 {
+      margin: 0 0 10px;
+      line-height: 1.2;
+    }
+
+    h1 { font-size: 34px; letter-spacing: -0.03em; }
+    h2 { font-size: 23px; margin-top: 6px; }
+    h3 { font-size: 17px; margin-top: 14px; }
+    p { margin: 0 0 10px; color: var(--dim); }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .chip {
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      border: 1px solid var(--line);
+      background: #faf6ee;
+    }
+
+    .ok { background: var(--ok-bg); color: var(--ok-fg); border-color: #cbe8d8; }
+    .warn { background: var(--warn-bg); color: var(--warn-fg); border-color: #f2d4a0; }
+    .bad { background: var(--bad-bg); color: var(--bad-fg); border-color: #efc0c0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 12px 12px;
+      border-bottom: 1px solid #eee4d7;
+      font-size: 14px;
+    }
+
+    th {
+      background: #f7efe2;
+      color: #493e2f;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    code {
+      background: var(--code);
+      border: 1px solid #ebdecb;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      color: #6d2c00;
+    }
+
+    ul {
+      margin: 8px 0 0 18px;
+      padding: 0;
+      color: var(--dim);
+    }
+
+    li { margin-bottom: 6px; }
+
+    .note, .danger {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 14px;
+    }
+
+    .note {
+      background: var(--warn-bg);
+      border: 1px solid #f1d6aa;
+      color: #734d12;
+    }
+
+    .danger {
+      background: var(--bad-bg);
+      border: 1px solid #edbaba;
+      color: #7e1f1f;
+    }
+
+    .small {
+      font-size: 13px;
+      color: var(--dim);
+    }
+
+    @media (max-width: 980px) {
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>RTX 与本地配置对照</h1>
+      <p>目的：区分三类配置来源，并验证 <code>p1 / p2 / p3</code> 在 RTX 上实际训练使用的 artifact，和本地 <code>training_plans/z1_5phase_plan.yaml</code>、当前 <code>source/.../velocity_env_cfg.py</code> 的关系。</p>
+      <div class="chips">
+        <span class="chip ok">deploy.yaml: RTX 与本地下载件一致</span>
+        <span class="chip ok">p3 实际训练地形: 与本地 plan 一致</span>
+        <span class="chip warn">历史 run 的 velocity_env_cfg.py 是训练快照，不等于你当前 source 模板</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>1. 三类文件分别代表什么</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>类型</th>
+            <th>路径示例</th>
+            <th>含义</th>
+            <th>判断优先级</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>RTX 训练快照</strong></td>
+            <td><code>~/magiclab_rl_lab/logs/rsl_rl/.../&lt;run_dir&gt;/params/velocity_env_cfg.py</code></td>
+            <td>某次训练当时真正使用的环境配置，随 run 一起固化保存。</td>
+            <td>最高。判断“那次训练到底跑了什么”优先看它。</td>
+          </tr>
+          <tr>
+            <td><strong>本地训练计划</strong></td>
+            <td><code>Magicbot_Z1/training_plans/z1_5phase_plan.yaml</code></td>
+            <td>当前 pipeline 的 phase 设计稿。由 orchestrator 读入，再生成具体 env cfg。</td>
+            <td>高。判断“当前计划应该跑什么”看它。</td>
+          </tr>
+          <tr>
+            <td><strong>本地 source 模板</strong></td>
+            <td><code>Magicbot_Z1/magiclab_rl_lab/source/.../velocity_env_cfg.py</code></td>
+            <td>当前源码树里放着的 active 模板，后续可能继续被替换或修改。</td>
+            <td>低。不能直接反推旧 run 当时的配置。</td>
+          </tr>
+          <tr>
+            <td><strong>deploy.yaml</strong></td>
+            <td><code>.../params/deploy.yaml</code></td>
+            <td>部署侧参数：关节映射、step_dt、PD、动作缩放、观测缩放、命令范围。</td>
+            <td>用于部署验证；不记录 terrain generator 细节。</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="note">
+        “历史训练快照”和“当前 source 模板”不相等是正常现象。因为每次训练都会把当时生成出来的 env cfg 单独存进 run 目录，之后你本地源码继续改了，历史快照不会跟着变。
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>2. deploy.yaml 一致性</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Sub-phase</th>
+            <th>RTX run_dir</th>
+            <th>RTX deploy SHA256</th>
+            <th>本地 deploy SHA256</th>
+            <th>结论</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>p1_coarse</strong></td>
+            <td><code>2026-05-06_15-47-12_p1_coarse</code></td>
+            <td><code>b2a60f3e...456021b</code></td>
+            <td><code>b2a60f3e...456021b</code></td>
+            <td><span class="chip ok">一致</span></td>
+          </tr>
+          <tr>
+            <td><strong>p1_fine</strong></td>
+            <td><code>2026-05-06_17-40-13_p1_fine</code></td>
+            <td><code>b2a60f3e...456021b</code></td>
+            <td><code>b2a60f3e...456021b</code></td>
+            <td><span class="chip ok">一致</span></td>
+          </tr>
+          <tr>
+            <td><strong>p2_coarse</strong></td>
+            <td><code>2026-05-15_17-44-46_p2_coarse</code></td>
+            <td><code>e98639bc...c0648c2</code></td>
+            <td><code>e98639bc...c0648c2</code></td>
+            <td><span class="chip ok">一致</span></td>
+          </tr>
+          <tr>
+            <td><strong>p2_fine</strong></td>
+            <td><code>2026-05-15_19-58-42_p2_fine</code></td>
+            <td><code>e98639bc...c0648c2</code></td>
+            <td><code>e98639bc...c0648c2</code></td>
+            <td><span class="chip ok">一致</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="small">说明：这里的“一致”只说明部署参数一致，不说明环境 terrain 一定从 deploy.yaml 读取。实际上 terrain 细节不在 deploy.yaml 里。</p>
+    </section>
+
+    <section class="panel">
+      <h2>3. p1 / p2 实际环境对照</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Phase</th>
+            <th>RTX 历史训练快照</th>
+            <th>本地 plan</th>
+            <th>本地当前 source 模板</th>
+            <th>结论</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>p1_coarse / p1_fine</strong></td>
+            <td><code>COBBLESTONE_ROAD_CFG = None</code><br><code>terrain_type="plane"</code><br><code>terrain_generator=None</code></td>
+            <td><code>terrain_type: plane</code><br><code>terrain_generator: null</code></td>
+            <td>当前 source 不是 p1 快照，不能拿它反推 p1 历史 run。</td>
+            <td><span class="chip ok">RTX 实际训练与 plan 一致，都是平地</span></td>
+          </tr>
+          <tr>
+            <td><strong>p2_coarse / p2_fine</strong></td>
+            <td><code>COBBLESTONE_ROAD_CFG = None</code><br><code>terrain_type="plane"</code><br><code>terrain_generator=None</code></td>
+            <td><code>terrain_type: plane</code><br><code>terrain_generator: null</code></td>
+            <td>当前 source 不是 p2 快照，不能拿它反推 p2 历史 run。</td>
+            <td><span class="chip ok">RTX 实际训练与 plan 一致，都是平地</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>4. p3 实际环境对照</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Sub-phase</th>
+            <th>RTX 历史训练快照</th>
+            <th>本地 plan</th>
+            <th>本地当前 source 模板</th>
+            <th>结论</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>p3_coarse</strong></td>
+            <td>
+              <code>terrain_type="generator"</code><br>
+              <code>terrain_generator=COBBLESTONE_ROAD_CFG</code><br>
+              <code>flat proportion=0.7</code><br>
+              <code>random_grid proportion=0.3</code><br>
+              <code>grid_height_range=(0.0, 0.25)</code><br>
+              <code>size=[8.0, 8.0]</code>, <code>num_rows=9</code>, <code>num_cols=21</code><br>
+              <code>horizontal_scale=0.1</code>, <code>vertical_scale=0.005</code>
+            </td>
+            <td>
+              <code>terrain: gentle</code><br>
+              <code>terrain_type: generator</code><br>
+              <code>flat 0.7 + random_grid 0.3</code><br>
+              <code>difficulty_range: [0.0, 0.25]</code>
+            </td>
+            <td>
+              当前本地 source 头部是：<br>
+              <code>terrain_type="generator"</code><br>
+              <code>sub_terrains={"flat": proportion=0.5}</code><br>
+              不是 p3_coarse 的历史快照
+            </td>
+            <td><span class="chip ok">RTX 实际训练与本地 plan 一致</span><br><span class="chip warn">与当前 source 模板不一致</span></td>
+          </tr>
+          <tr>
+            <td><strong>p3_fine</strong></td>
+            <td>
+              <code>terrain_type="generator"</code><br>
+              <code>terrain_generator=COBBLESTONE_ROAD_CFG</code><br>
+              <code>flat proportion=0.7</code><br>
+              <code>random_grid proportion=0.3</code><br>
+              <code>grid_height_range=(0.0, 0.35)</code><br>
+              <code>size=[8.0, 8.0]</code>, <code>num_rows=9</code>, <code>num_cols=21</code><br>
+              <code>horizontal_scale=0.1</code>, <code>vertical_scale=0.005</code>
+            </td>
+            <td>
+              <code>terrain: gentle</code><br>
+              <code>terrain_type: generator</code><br>
+              <code>flat 0.7 + random_grid 0.3</code><br>
+              <code>difficulty_range: [0.0, 0.35]</code>
+            </td>
+            <td>
+              当前本地 source 头部是：<br>
+              <code>terrain_type="generator"</code><br>
+              <code>sub_terrains={"flat": proportion=0.5}</code><br>
+              不是 p3_fine 的历史快照
+            </td>
+            <td><span class="chip ok">RTX 实际训练与本地 plan 一致</span><br><span class="chip warn">与当前 source 模板不一致</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="note">
+        p3 这里的“一致”，是指 RTX run 目录里的 <code>params/velocity_env_cfg.py</code> 和本地 <code>training_plans/z1_5phase_plan.yaml</code> 一致。不是指它和你当前 source 树里的 <code>velocity_env_cfg.py</code> 一致。
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>5. 最短结论</h2>
+      <ul>
+        <li><strong>p1 / p2</strong>：RTX 上实际训练用的是平地，和本地 plan 一致。</li>
+        <li><strong>p3_coarse</strong>：RTX 上实际训练用的是 <code>generator</code>，<code>70% flat + 30% random_grid</code>，高度上限 <code>0.25</code>，和本地 plan 一致。</li>
+        <li><strong>p3_fine</strong>：RTX 上实际训练用的是 <code>generator</code>，<code>70% flat + 30% random_grid</code>，高度上限 <code>0.35</code>，和本地 plan 一致。</li>
+        <li><strong>deploy.yaml</strong>：本地下载件和 RTX run 目录里的部署参数一致。</li>
+        <li><strong>当前本地 source 模板</strong>：不是这些历史 run 的快照，不能用它去反推当时实际训练配置。</li>
+      </ul>
+      <div class="danger">
+        现在如果你要继续追“当前到底应以谁为准”，答案是：看历史训练事实用 RTX run 目录里的 <code>params/velocity_env_cfg.py</code>；看当前 pipeline 设计用本地 <code>z1_5phase_plan.yaml</code>；不要直接拿当前 source 模板替代这两者。
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>6. 关键路径</h2>
+      <ul>
+        <li>本地 plan: <code>Magicbot_Z1/training_plans/z1_5phase_plan.yaml</code></li>
+        <li>本地当前 source 模板: <code>Magicbot_Z1/magiclab_rl_lab/source/magiclab_rl_lab/magiclab_rl_lab/tasks/locomotion/robots/z1/12dof/velocity_env_cfg.py</code></li>
+        <li>RTX 历史 run 示例: <code>~/magiclab_rl_lab/logs/rsl_rl/magiclab_z1_12dof_velocity/2026-05-16_12-13-26_p3_fine/params/velocity_env_cfg.py</code></li>
+        <li>本地 deploy 下载件: <code>Magicbot_Z1/videos/p/*/params/deploy.yaml</code></li>
+      </ul>
+    </section>
+  </div>
+</body>
+</html>

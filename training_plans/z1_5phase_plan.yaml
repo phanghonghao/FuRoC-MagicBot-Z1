@@ -1,6 +1,11 @@
 # MagicBot Z1 12DOF — 5-Phase Automated Training Pipeline
 # =====================================================
 # p3: standing-biased → velocity-balanced (reduce alive, add stand_still penalty)
+# Verified baseline source:
+# - Completed sub-phases are aligned to the RTX run artifacts in
+#   ~/magiclab_rl_lab/logs/rsl_rl/magiclab_z1_12dof_velocity/<run_dir>/params/
+# - p1/p2/p3 entries below are kept in sync with the current verified run dirs.
+# - p4/p5 remain planned until matching RTX artifact snapshots are validated.
 
 plan_name: z1_5phase
 num_gpus: 4
